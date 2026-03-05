@@ -1,0 +1,22 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "regions": ["hnd1"],
+  "functions": {
+    "src/app/api/line/scrape/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/line/broadcast/route.ts": {
+      "maxDuration": 30
+    },
+    "src/app/api/cron/line-broadcast/route.ts": {
+      "maxDuration": 120
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/line-broadcast",
+      "schedule": "0 0,9 * * *"
+    }
+  ]
+}
