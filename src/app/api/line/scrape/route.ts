@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
-import { scrapeLatestArticles } from '@/lib/line/scraper';
+import { scrapeLatestArticles, getAndClearLogs } from '@/lib/line/scraper';
 import { summarizeArticle } from '@/lib/line/summarizer';
 
 export async function POST() {
   try {
     const articles = await scrapeLatestArticles();
+    const scrapeLogs = getAndClearLogs();
+
     if (articles.length === 0) {
-      return NextResponse.json({ articles: [], message: '新しい記事が見つかりませんでした' });
+      return NextResponse.json({
+        articles: [],
+        message: '新しい記事が見つかりませんでした',
+        logs: scrapeLogs,
+      });
     }
 
     const results = [];
@@ -21,7 +27,8 @@ export async function POST() {
           thumbnailUrl: article.thumbnailUrl,
           category: article.category,
         });
-      } catch {
+      } catch (err) {
+        console.error('[scrape] summarize failed:', err);
         results.push({
           url: article.url,
           originalTitle: article.title,
@@ -32,9 +39,14 @@ export async function POST() {
         });
       }
     }
-    return NextResponse.json({ articles: results });
+    return NextResponse.json({ articles: results, logs: scrapeLogs });
   } catch (error) {
+    const scrapeLogs = getAndClearLogs();
     console.error('[scrape]', error);
-    return NextResponse.json({ error: '記事の取得に失敗しました' }, { status: 500 });
+    return NextResponse.json({
+      error: '記事の取得に失敗しました',
+      detail: error instanceof Error ? error.message : String(error),
+      logs: scrapeLogs,
+    }, { status: 500 });
   }
 }

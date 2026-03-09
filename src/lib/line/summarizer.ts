@@ -1,18 +1,27 @@
 // ============================================================================
 // src/lib/line/summarizer.ts
 // Gemini API による記事要約生成
+// リトライロジック付き (E-04, E-05, E-06)
 // ============================================================================
 
 import type { ScrapedArticle, SummaryResult } from '@/types/line';
+import { config } from './config';
+import { withRetry, HttpError } from './retry';
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
-const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+// ─── カスタムエラー ──────────────────────────────────────────────────────────
 
-function getApiKey(): string {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY is not set');
-  return key;
+export class GeminiApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly isSafetyBlock: boolean = false,
+  ) {
+    super(message);
+    this.name = 'GeminiApiError';
+  }
 }
+
+// ─── プロンプト ──────────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `あなたはプロのコピーライターです。
 ブログ記事の本文を読み、LINE公式アカウントで配信するための要約文を作成してください。
@@ -30,14 +39,22 @@ const SYSTEM_PROMPT = `あなたはプロのコピーライターです。
 - 最後に「詳しくはこちら」等の誘導文は含めないこと（リンクは別途付与する）
 - タイトル行と本文の間に空行を1つ入れること`;
 
-export async function summarizeArticle(article: ScrapedArticle): Promise<SummaryResult> {
-  const apiKey = getApiKey();
-  const url = `${BASE_URL}/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+// ─── Gemini API 呼び出し ─────────────────────────────────────────────────────
 
-  const truncatedBody =
-    article.body.length > 5000 ? article.body.substring(0, 5000) + '\n\n（以下省略）' : article.body;
+interface GeminiResponse {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string }> };
+    finishReason?: string;
+  }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
+}
 
-  const userPrompt = `【記事タイトル】\n${article.title}\n\n【記事本文】\n${truncatedBody}`;
+async function callGeminiApi(userPrompt: string): Promise<GeminiResponse> {
+  const url = `${config.gemini.baseUrl}/${config.gemini.model}:generateContent?key=${config.gemini.apiKey}`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -46,22 +63,74 @@ export async function summarizeArticle(article: ScrapedArticle): Promise<Summary
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
       generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 512,
-        topP: 0.9,
+        temperature: config.gemini.temperature,
+        maxOutputTokens: config.gemini.maxOutputTokens,
+        topP: config.gemini.topP,
       },
     }),
   });
 
   if (!response.ok) {
     const err = await response.text().catch(() => 'unknown');
-    throw new Error(`Gemini API error ${response.status}: ${err.substring(0, 200)}`);
+    throw new HttpError(
+      `Gemini API error ${response.status}: ${err.substring(0, 200)}`,
+      response.status,
+    );
   }
 
-  const data = await response.json();
+  const data: GeminiResponse = await response.json();
+
+  // E-06: セーフティフィルタブロック — リトライ不可
+  const finishReason = data.candidates?.[0]?.finishReason;
+  if (finishReason === 'SAFETY') {
+    throw new GeminiApiError(
+      'Gemini API: コンテンツがセーフティフィルタによりブロックされました',
+      200,
+      true,
+    );
+  }
+
+  return data;
+}
+
+function parseSummary(data: GeminiResponse, originalTitle: string): { catchyTitle: string; summaryText: string } {
   const text = data.candidates?.[0]?.content?.parts
-    ?.map((p: { text?: string }) => p.text || '')
+    ?.map((p) => p.text || '')
     .join('') || '';
+
+  const lines = text.trim().split('\n');
+  const catchyTitle = (lines[0] || originalTitle).replace(/^[#*\->\s]+/, '').trim();
+  let summaryText = lines.slice(1).filter((l) => l.trim().length > 0).join('\n').trim();
+
+  if (summaryText.length > config.summary.truncateAt) {
+    const cutPos = summaryText.lastIndexOf('。', config.summary.truncateAt);
+    if (cutPos > 150) summaryText = summaryText.substring(0, cutPos + 1);
+  }
+
+  return { catchyTitle, summaryText };
+}
+
+// ─── 公開API ─────────────────────────────────────────────────────────────────
+
+export async function summarizeArticle(article: ScrapedArticle): Promise<SummaryResult> {
+  const truncatedBody =
+    article.body.length > config.gemini.maxBodyLength
+      ? article.body.substring(0, config.gemini.maxBodyLength) + '\n\n（以下省略）'
+      : article.body;
+
+  const userPrompt = `【記事タイトル】\n${article.title}\n\n【記事本文】\n${truncatedBody}`;
+
+  // E-04: API呼び出し失敗 — 2回リトライ (5秒間隔)
+  // E-06: セーフティフィルタはリトライしない (GeminiApiError.isSafetyBlock)
+  const data = await withRetry(
+    () => callGeminiApi(userPrompt),
+    {
+      ...config.retry.gemini,
+      onRetry: (attempt, error) => {
+        console.log(`[summarizer] Gemini API retry #${attempt}: ${error.message}`);
+      },
+    },
+  );
 
   const usage = data.usageMetadata || {};
   const tokenUsage = {
@@ -70,15 +139,25 @@ export async function summarizeArticle(article: ScrapedArticle): Promise<Summary
     totalTokens: usage.totalTokenCount || 0,
   };
 
-  // タイトルと要約を分離
-  const lines = text.trim().split('\n');
-  let catchyTitle = (lines[0] || article.title).replace(/^[#*\->\s]+/, '').trim();
-  let summaryText = lines.slice(1).filter((l: string) => l.trim().length > 0).join('\n').trim();
+  let { catchyTitle, summaryText } = parseSummary(data, article.title);
 
-  // 長すぎる場合は句点で切る
-  if (summaryText.length > 350) {
-    const cutPos = summaryText.lastIndexOf('。', 350);
-    if (cutPos > 150) summaryText = summaryText.substring(0, cutPos + 1);
+  // E-05: 要約結果が不正 — 再生成1回
+  if (summaryText.length < config.summary.minLength || summaryText.length > config.summary.absoluteMaxLength) {
+    console.log(`[summarizer] Summary invalid (length=${summaryText.length}), regenerating once...`);
+    const retryData = await callGeminiApi(userPrompt);
+    const retryResult = parseSummary(retryData, article.title);
+
+    if (retryResult.summaryText.length >= config.summary.minLength &&
+        retryResult.summaryText.length <= config.summary.absoluteMaxLength) {
+      catchyTitle = retryResult.catchyTitle;
+      summaryText = retryResult.summaryText;
+    } else {
+      console.warn(`[summarizer] Retry also produced invalid summary (length=${retryResult.summaryText.length}), using best effort`);
+      if (retryResult.summaryText.length > summaryText.length) {
+        catchyTitle = retryResult.catchyTitle;
+        summaryText = retryResult.summaryText;
+      }
+    }
   }
 
   return { catchyTitle, summaryText, tokenUsage };

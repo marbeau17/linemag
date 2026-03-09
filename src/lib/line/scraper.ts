@@ -1,14 +1,41 @@
 // ============================================================================
 // src/lib/line/scraper.ts
 // ブログスクレイピング — 記事一覧・詳細・サムネイル画像取得
+// リトライロジック付き (E-01, E-03)
 // ============================================================================
 
 import * as cheerio from 'cheerio';
 import type { ScrapedArticle } from '@/types/line';
+import { config } from './config';
+import { withRetry, fetchWithHttpError } from './retry';
 
-const BLOG_URL = 'https://meetsc.co.jp/blog/';
-const BLOG_BASE_URL = 'https://meetsc.co.jp/blog/';
-const MAX_ARTICLES = 5;
+// ─── ログ収集 ────────────────────────────────────────────────────────────────
+
+export interface ScrapeLog {
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+let _logs: ScrapeLog[] = [];
+
+function log(level: ScrapeLog['level'], message: string, data?: Record<string, unknown>) {
+  const entry: ScrapeLog = { timestamp: new Date().toISOString(), level, message, data };
+  _logs.push(entry);
+  const prefix = `[scraper:${level}]`;
+  if (level === 'error') console.error(prefix, message, data || '');
+  else if (level === 'warn') console.warn(prefix, message, data || '');
+  else console.log(prefix, message, data || '');
+}
+
+export function getAndClearLogs(): ScrapeLog[] {
+  const out = [..._logs];
+  _logs = [];
+  return out;
+}
+
+// ─── 記事一覧 ────────────────────────────────────────────────────────────────
 
 interface ArticleListItem {
   url: string;
@@ -18,68 +45,168 @@ interface ArticleListItem {
 }
 
 export async function fetchArticleList(): Promise<ArticleListItem[]> {
-  const response = await fetch(BLOG_URL, {
-    headers: { 'User-Agent': 'LineMag/1.0' },
-  });
-  if (!response.ok) throw new Error(`Blog fetch failed: ${response.status}`);
+  log('info', 'Fetching blog index page', { url: config.blog.url });
+
+  // E-01: ブログページ取得失敗 — 1回リトライ (3秒間隔)
+  const response = await withRetry(
+    () => fetchWithHttpError(config.blog.url, {
+      headers: { 'User-Agent': config.blog.userAgent },
+    }),
+    {
+      ...config.retry.scraper,
+      onRetry: (attempt, error) => {
+        log('warn', `Blog index fetch retry #${attempt}`, { error: error.message });
+      },
+    },
+  );
 
   const html = await response.text();
+  log('info', 'Blog HTML fetched', { htmlLength: html.length });
+
   const $ = cheerio.load(html);
   const articles: ArticleListItem[] = [];
 
-  $('.card, [class*="card"], article').each((_, el) => {
+  // ── デバッグ: ページ内のカード系要素を探索 ──
+  const cardCount = $('.card').length;
+  const articleCount = $('article').length;
+  const allLinks = $('a[href$=".html"]').length;
+  log('debug', 'DOM element counts', { '.card': cardCount, 'article': articleCount, 'a[href$=.html]': allLinks });
+
+  // ── メイン抽出: .card 要素 ──
+  $('.card').each((i, el) => {
     const $card = $(el);
     const $link = $card.find('a[href]').first();
     const href = $link.attr('href');
+
+    log('debug', `Card #${i} found`, {
+      hasLink: !!href,
+      href: href || 'none',
+      html: $card.html()?.substring(0, 200),
+    });
+
     if (!href || href === '#') return;
 
-    const url = href.startsWith('http') ? href : `${BLOG_BASE_URL}${href}`;
+    let url: string;
+    if (href.startsWith('http')) {
+      url = href;
+    } else if (href.startsWith('./')) {
+      url = `${config.blog.baseUrl}${href.substring(2)}`;
+    } else {
+      url = `${config.blog.baseUrl}${href}`;
+    }
+
     const title =
       $card.find('h3').first().text().trim() ||
       $card.find('h2').first().text().trim() ||
       $link.text().trim() || '';
-    if (!title || title === 'READ MORE') return;
+    if (!title || title === 'READ MORE') {
+      log('debug', `Card #${i} skipped — no valid title`, { rawText: $card.text().substring(0, 100) });
+      return;
+    }
 
     const $img = $card.find('img').first();
     let thumbnailUrl: string | null = null;
     if ($img.length) {
-      const src = $img.attr('src') || $img.attr('data-src');
+      const src = $img.attr('src') || $img.attr('data-src') || $img.attr('data-lazy-src');
       if (src) {
-        thumbnailUrl = src.startsWith('http')
-          ? src
-          : `https://meetsc.co.jp${src.startsWith('/') ? '' : '/'}${src}`;
+        if (src.startsWith('http')) {
+          thumbnailUrl = src;
+        } else if (src.startsWith('./')) {
+          thumbnailUrl = `${config.blog.baseUrl}${src.substring(2)}`;
+        } else if (src.startsWith('/')) {
+          thumbnailUrl = `${config.blog.siteUrl}${src}`;
+        } else {
+          thumbnailUrl = `${config.blog.baseUrl}${src}`;
+        }
       }
+      log('debug', `Card #${i} image`, { rawSrc: src, resolved: thumbnailUrl });
     }
 
     const category =
-      $card.find('[class*="badge"], [class*="category"], .tag').first().text().trim() || null;
+      $card.find('.category-badge').first().text().trim() ||
+      $card.attr('data-category') ||
+      $card.find('[class*="badge"], [class*="category"]').first().text().trim() ||
+      null;
 
     articles.push({ url, title, thumbnailUrl, category });
+    log('info', `Article extracted: ${title}`, { url, hasThumbnail: !!thumbnailUrl, category });
   });
 
-  return articles.slice(0, MAX_ARTICLES);
+  // ── フォールバック: .card が無い場合 ──
+  if (articles.length === 0) {
+    log('warn', 'No .card elements found — trying fallback link selector');
+
+    $('a[href$=".html"]').each((i, el) => {
+      const $a = $(el);
+      const href = $a.attr('href');
+      if (!href || href === '#' || href.includes('index')) return;
+
+      let url: string;
+      if (href.startsWith('http')) url = href;
+      else if (href.startsWith('./')) url = `${config.blog.baseUrl}${href.substring(2)}`;
+      else url = `${config.blog.baseUrl}${href}`;
+
+      if (articles.some(a => a.url === url)) return;
+
+      const title = $a.find('h3, h2').first().text().trim() || $a.text().trim();
+      if (!title || title.length < 5 || title === 'READ MORE') return;
+
+      const $img = $a.find('img').first();
+      let thumbnailUrl: string | null = null;
+      if ($img.length) {
+        const src = $img.attr('src') || $img.attr('data-src');
+        if (src) {
+          if (src.startsWith('http')) thumbnailUrl = src;
+          else if (src.startsWith('./')) thumbnailUrl = `${config.blog.baseUrl}${src.substring(2)}`;
+          else thumbnailUrl = `${config.blog.baseUrl}${src}`;
+        }
+      }
+
+      articles.push({ url, title, thumbnailUrl, category: null });
+      log('info', `Fallback article: ${title}`, { url });
+    });
+  }
+
+  log('info', `Total articles extracted: ${articles.length}`);
+  return articles.slice(0, config.blog.maxArticlesPerScrape);
 }
 
+// ─── 記事詳細 ────────────────────────────────────────────────────────────────
+
 export async function fetchArticleDetail(item: ArticleListItem): Promise<ScrapedArticle> {
-  const response = await fetch(item.url, {
-    headers: { 'User-Agent': 'LineMag/1.0' },
-  });
-  if (!response.ok) throw new Error(`Article fetch failed: ${response.status} — ${item.url}`);
+  log('info', `Fetching article detail: ${item.title}`, { url: item.url });
+
+  // E-03: 記事詳細ページ取得失敗 — 1回リトライ
+  const response = await withRetry(
+    () => fetchWithHttpError(item.url, {
+      headers: { 'User-Agent': config.blog.userAgent },
+    }),
+    {
+      ...config.retry.scraper,
+      onRetry: (attempt, error) => {
+        log('warn', `Article detail fetch retry #${attempt}`, { url: item.url, error: error.message });
+      },
+    },
+  );
 
   const html = await response.text();
   const $ = cheerio.load(html);
 
-  const articleEl = $('article').first();
-  const contentRoot = articleEl.length ? articleEl : $('main').first();
+  const contentRoot = $('article').first().length ? $('article').first()
+    : $('main').first().length ? $('main').first()
+    : $('body');
+
   const bodyClone = contentRoot.clone();
-  bodyClone.find('nav, footer, header, script, style, [class*="related"], [class*="share"]').remove();
+  bodyClone.find('nav, footer, header, script, style, noscript, [class*="related"], [class*="share"], [class*="sidebar"]').remove();
 
   const bodyText = bodyClone
     .find('p, h2, h3, li')
     .map((_, el) => $(el).text().trim())
     .get()
-    .filter((t) => t.length > 0)
+    .filter((t: string) => t.length > 0)
     .join('\n');
+
+  log('debug', 'Article body extracted', { bodyLength: bodyText.length, preview: bodyText.substring(0, 150) });
 
   const dateMatch = html.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
   const publishedAt = dateMatch
@@ -90,8 +217,9 @@ export async function fetchArticleDetail(item: ArticleListItem): Promise<Scraped
   if (!thumbnailUrl) {
     const ogImage = $('meta[property="og:image"]').attr('content');
     if (ogImage) {
-      thumbnailUrl = ogImage.startsWith('http') ? ogImage : `https://meetsc.co.jp${ogImage}`;
+      thumbnailUrl = ogImage.startsWith('http') ? ogImage : `${config.blog.siteUrl}${ogImage}`;
     }
+    log('debug', 'OGP image fallback', { ogImage, resolved: thumbnailUrl });
   }
 
   return {
@@ -104,15 +232,27 @@ export async function fetchArticleDetail(item: ArticleListItem): Promise<Scraped
   };
 }
 
+// ─── 一括取得 ────────────────────────────────────────────────────────────────
+
 export async function scrapeLatestArticles(): Promise<ScrapedArticle[]> {
+  _logs = [];
+  log('info', '=== Scrape session started ===');
+
   const list = await fetchArticleList();
   const articles: ScrapedArticle[] = [];
+
   for (const item of list) {
     try {
       articles.push(await fetchArticleDetail(item));
     } catch (err) {
-      console.warn(`[scraper] Failed to fetch ${item.url}:`, err);
+      // E-03: 該当記事をスキップし次の記事を処理
+      log('error', `Failed to fetch article detail — skipping`, {
+        url: item.url,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
+
+  log('info', `=== Scrape complete: ${articles.length} articles ===`);
   return articles;
 }

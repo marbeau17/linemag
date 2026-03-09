@@ -7,6 +7,7 @@ const NAV = [
   { label: 'マニュアル配信', href: '/dashboard' },
   { label: 'スケジュール', href: '/dashboard/schedule' },
   { label: '配信履歴', href: '/dashboard/history' },
+  { label: 'ログ', href: '/dashboard/logs' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

@@ -1,33 +1,92 @@
 // ============================================================================
 // src/lib/line/messaging.ts
 // LINE Messaging API — Broadcast 配信クライアント
+// リトライロジック付き (E-07, E-08, E-09)
 // ============================================================================
 
 import type { BroadcastRequest, BroadcastResult, FlexContainer, LineMessage } from '@/types/line';
 import { buildFlexMessage } from './templates';
+import { config } from './config';
+import { sleep } from './retry';
 
-const LINE_BROADCAST_URL = 'https://api.line.me/v2/bot/message/broadcast';
+// ─── カスタムエラー ──────────────────────────────────────────────────────────
 
-function getToken(): string {
-  const t = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-  if (!t) throw new Error('LINE_CHANNEL_ACCESS_TOKEN is not set');
-  return t;
-}
-
-async function sendBroadcast(messages: LineMessage[]): Promise<void> {
-  const res = await fetch(LINE_BROADCAST_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${getToken()}`,
-    },
-    body: JSON.stringify({ messages }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => 'unknown');
-    throw new Error(`LINE API error ${res.status}: ${body}`);
+export class LineApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly isAuthError: boolean = false,
+  ) {
+    super(message);
+    this.name = 'LineApiError';
   }
 }
+
+// ─── 送信処理 (リトライ付き) ─────────────────────────────────────────────────
+
+async function sendBroadcast(messages: LineMessage[]): Promise<void> {
+  const doSend = async (): Promise<void> => {
+    const res = await fetch(config.line.broadcastUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.line.channelAccessToken}`,
+      },
+      body: JSON.stringify({ messages }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => 'unknown');
+
+      // E-07: 認証エラー (401) — 即座にthrow、リトライしない
+      if (res.status === 401) {
+        throw new LineApiError(
+          `LINE API認証エラー: トークンが無効または失効しています。LINE Developers ConsoleでChannel Access Tokenを再発行してください。`,
+          401,
+          true,
+        );
+      }
+
+      // E-08: レート制限 (429) — 60秒待機後1回リトライ
+      if (res.status === 429) {
+        throw new LineApiError(`LINE API rate limit (429): ${body}`, 429);
+      }
+
+      // E-09: その他のエラー
+      throw new LineApiError(`LINE API error ${res.status}: ${body}`, res.status);
+    }
+  };
+
+  try {
+    await doSend();
+  } catch (error) {
+    if (!(error instanceof LineApiError)) throw error;
+
+    // E-07: 認証エラーはリトライしない
+    if (error.isAuthError) throw error;
+
+    // E-08: 429 は60秒待ってリトライ
+    if (error.status === 429) {
+      console.log('[messaging] Rate limited (429), waiting 60 seconds before retry...');
+      await sleep(config.retry.lineRateLimit.delayMs);
+      await doSend();
+      return;
+    }
+
+    // E-09: 5xx は5秒後に1回リトライ、4xx はリトライしない
+    if (error.status >= 500) {
+      console.log(`[messaging] Server error (${error.status}), retrying in 5 seconds...`);
+      await sleep(config.retry.lineDefault.delayMs);
+      await doSend();
+      return;
+    }
+
+    // 4xx (429以外) はリトライしない
+    throw error;
+  }
+}
+
+// ─── 公開API ─────────────────────────────────────────────────────────────────
 
 export async function broadcastArticle(req: BroadcastRequest): Promise<BroadcastResult> {
   try {
