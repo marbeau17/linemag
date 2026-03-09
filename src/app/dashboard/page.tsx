@@ -38,6 +38,16 @@ function Spinner({ className = 'w-4 h-4' }: { className?: string }) {
   );
 }
 
+// ─── Back Arrow Icon (reused) ────────────────────────────────────────────────
+
+function BackArrow() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+    </svg>
+  );
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -62,6 +72,7 @@ export default function DashboardPage() {
   // UI state
   const [listLoading, setListLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [testSending, setTestSending] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // ── Step 1: Fetch article list (fast) ──────────────────────────────────────
@@ -172,6 +183,55 @@ export default function DashboardPage() {
     }
   }, [selectedUrl, detailLoaded, templateId]);
 
+  // ── Test broadcast (admin only) ───────────────────────────────────────────
+
+  const sendTest = useCallback(async () => {
+    if (!selectedUrl) return;
+    const detail = detailLoaded[selectedUrl];
+    if (!detail) return;
+
+    setTestSending(true);
+    setMsg(null);
+    try {
+      const r = await fetch('/api/line/test-broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          articleUrl: detail.url,
+          articleTitle: detail.title,
+          summaryTitle: detail.catchyTitle,
+          summaryText: detail.summaryText,
+          thumbnailUrl: detail.thumbnailUrl,
+          templateId,
+          articleCategory: detail.category,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setMsg({ ok: true, text: 'テスト配信が完了しました。LINEアプリで確認してください。' });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : 'テスト配信に失敗しました' });
+    } finally {
+      setTestSending(false);
+    }
+  }, [selectedUrl, detailLoaded, templateId]);
+
+  // ── Preview in new window ─────────────────────────────────────────────────
+
+  const openPreviewWindow = () => {
+    if (!selectedDetail) return;
+    const previewData = {
+      summaryTitle: selectedDetail.catchyTitle,
+      summaryText: selectedDetail.summaryText,
+      thumbnailUrl: selectedDetail.thumbnailUrl,
+      articleUrl: selectedDetail.url,
+      articleCategory: selectedDetail.category,
+      selectedTemplateId: templateId,
+    };
+    localStorage.setItem('linemag-preview', JSON.stringify(previewData));
+    window.open('/preview', '_blank', 'width=1200,height=800');
+  };
+
   // ── Derived values ─────────────────────────────────────────────────────────
 
   const selectedDetail = selectedUrl ? detailLoaded[selectedUrl] : null;
@@ -182,6 +242,9 @@ export default function DashboardPage() {
 
   // Can proceed to template step only if selected article has detail loaded
   const canProceedToTemplate = selectedUrl !== null && selectedDetail !== null;
+
+  // Suppress unused variable warning
+  void selectedItem;
 
   return (
     <div className="space-y-6">
@@ -275,20 +338,22 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       {step === 'select' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
             <h2 className="text-sm font-bold text-slate-800">
               配信する記事を選択（{articleList.length}件）
             </h2>
             <button
-              onClick={() => {
-                setStep('fetch');
-                setArticleList([]);
-                setDetailLoaded({});
-                setDetailLoading({});
-                setSelectedUrl(null);
-              }}
-              className="text-xs text-slate-400 hover:text-slate-600"
+              onClick={fetchArticleList}
+              disabled={listLoading}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-500 bg-white border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-50 transition-colors"
             >
+              {listLoading ? (
+                <Spinner className="w-3 h-3" />
+              ) : (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                </svg>
+              )}
               再取得
             </button>
           </div>
@@ -340,8 +405,21 @@ export default function DashboardPage() {
             })}
           </div>
 
-          {/* Next button */}
-          <div className="flex justify-end">
+          {/* Bottom navigation bar */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => {
+                setStep('fetch');
+                setArticleList([]);
+                setDetailLoaded({});
+                setDetailLoading({});
+                setSelectedUrl(null);
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              <BackArrow />
+              記事一覧に戻る
+            </button>
             <button
               onClick={() => setStep('template')}
               disabled={!canProceedToTemplate}
@@ -358,21 +436,23 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       {step === 'template' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div>
             <h2 className="text-sm font-bold text-slate-800">配信テンプレートを選択</h2>
-            <button
-              onClick={() => setStep('select')}
-              className="text-xs text-slate-400 hover:text-slate-600"
-            >
-              戻る
-            </button>
           </div>
           <TemplateSelector
             templates={TEMPLATE_DEFINITIONS}
             selected={templateId}
             onSelect={setTemplateId}
           />
-          <div className="flex justify-end">
+          {/* Bottom navigation bar */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setStep('select')}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              <BackArrow />
+              記事選択に戻る
+            </button>
             <button
               onClick={() => setStep('confirm')}
               className="px-5 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
@@ -388,14 +468,8 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       {step === 'confirm' && selectedDetail && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div>
             <h2 className="text-sm font-bold text-slate-800">配信内容の確認</h2>
-            <button
-              onClick={() => setStep('template')}
-              className="text-xs text-slate-400 hover:text-slate-600"
-            >
-              戻る
-            </button>
           </div>
 
           {/* Side-by-side layout */}
@@ -462,8 +536,17 @@ export default function DashboardPage() {
 
             {/* Right: LINE message preview */}
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <div className="px-5 py-3 border-b border-slate-100">
+              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
                 <p className="text-xs font-semibold text-slate-500">LINEメッセージ プレビュー</p>
+                <button
+                  onClick={openPreviewWindow}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-500 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                  </svg>
+                  別ウィンドウでプレビュー
+                </button>
               </div>
               <div className="p-5 flex justify-center">
                 <FlexPreview
@@ -478,11 +561,60 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Send button */}
-          <div className="bg-white rounded-xl border border-slate-200 px-5 py-4">
+          {/* Bottom navigation bar */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setStep('template')}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              <BackArrow />
+              テンプレート選択に戻る
+            </button>
+            <div>{/* Spacer - send button is in the card below */}</div>
+          </div>
+
+          {/* Send buttons */}
+          <div className="bg-white rounded-xl border border-slate-200 px-5 py-4 space-y-3">
+            {/* Test broadcast button */}
+            <button
+              onClick={sendTest}
+              disabled={testSending || sending}
+              className="w-full py-3 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+            >
+              {testSending ? (
+                <>
+                  <Spinner />
+                  テスト配信中...
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+                    />
+                  </svg>
+                  テスト配信（自分のみ）
+                </>
+              )}
+            </button>
+            <p className="text-[11px] text-slate-400 text-center">
+              管理者のLINEにのみ送信されます。実際の見え方やURLの動作を確認できます。
+            </p>
+
+            <div className="h-px bg-slate-100" />
+
+            {/* Full broadcast button */}
             <button
               onClick={send}
-              disabled={sending}
+              disabled={sending || testSending}
               className="w-full py-3 bg-green-600 text-white text-sm font-bold rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
             >
               {sending ? (
@@ -505,7 +637,7 @@ export default function DashboardPage() {
                       d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
                     />
                   </svg>
-                  LINE配信を実行する
+                  LINE配信を実行する（全フォロワー）
                 </>
               )}
             </button>

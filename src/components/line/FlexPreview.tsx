@@ -37,9 +37,6 @@ export default function FlexPreview({
 
   return (
     <div className="flex flex-col items-center gap-3">
-      {/* ラベル */}
-      <p className="text-xs font-medium text-slate-500">LINEプレビュー</p>
-
       {/* スマホフレーム */}
       <div className="w-full max-w-[320px] rounded-2xl bg-[#7494A5] p-4 shadow-xl">
         {/* ステータスバー風 */}
