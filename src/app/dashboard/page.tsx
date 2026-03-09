@@ -75,6 +75,18 @@ export default function DashboardPage() {
   const [testSending, setTestSending] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Pagination
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 10;
+
+  // Category filter
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  // Delivery mode
+  const [deliveryMode, setDeliveryMode] = useState<'broadcast' | 'push'>('broadcast');
+  const [pushUserId, setPushUserId] = useState('');
+  const [pushSending, setPushSending] = useState(false);
+
   // ── Step 1: Fetch article list (fast) ──────────────────────────────────────
 
   const fetchArticleList = useCallback(async () => {
@@ -89,6 +101,8 @@ export default function DashboardPage() {
       setDetailLoaded({});
       setDetailLoading({});
       setSelectedUrl(null);
+      setPage(0);
+      setCategoryFilter('all');
       setStep('select');
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : '記事一覧の取得に失敗しました' });
@@ -216,6 +230,40 @@ export default function DashboardPage() {
     }
   }, [selectedUrl, detailLoaded, templateId]);
 
+  // ── Individual push ─────────────────────────────────────────────────────────
+
+  const sendPush = useCallback(async () => {
+    if (!selectedUrl || !pushUserId.trim()) return;
+    const detail = detailLoaded[selectedUrl];
+    if (!detail) return;
+
+    setPushSending(true);
+    setMsg(null);
+    try {
+      const r = await fetch('/api/line/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: pushUserId.trim(),
+          articleUrl: detail.url,
+          articleTitle: detail.title,
+          summaryTitle: detail.catchyTitle,
+          summaryText: detail.summaryText,
+          thumbnailUrl: detail.thumbnailUrl,
+          templateId,
+          articleCategory: detail.category,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setMsg({ ok: true, text: `個別配信が完了しました（User ID: ${pushUserId.trim()}）` });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : '個別配信に失敗しました' });
+    } finally {
+      setPushSending(false);
+    }
+  }, [selectedUrl, detailLoaded, templateId, pushUserId]);
+
   // ── Preview in new window ─────────────────────────────────────────────────
 
   const openPreviewWindow = () => {
@@ -242,6 +290,17 @@ export default function DashboardPage() {
 
   // Can proceed to template step only if selected article has detail loaded
   const canProceedToTemplate = selectedUrl !== null && selectedDetail !== null;
+
+  // ── Categories and filtered/paginated articles ──────────────────────────────
+
+  const categories = Array.from(new Set(articleList.map((a) => a.category).filter(Boolean))) as string[];
+
+  const filteredArticles = categoryFilter === 'all'
+    ? articleList
+    : articleList.filter((a) => a.category === categoryFilter);
+
+  const totalPages = Math.max(1, Math.ceil(filteredArticles.length / PAGE_SIZE));
+  const paginatedArticles = filteredArticles.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   // Suppress unused variable warning
   void selectedItem;
@@ -338,10 +397,26 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       {step === 'select' && (
         <div className="space-y-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h2 className="text-sm font-bold text-slate-800">
-              配信する記事を選択（{articleList.length}件）
+              配信する記事を選択（{filteredArticles.length}件）
             </h2>
+            {/* Category filter */}
+            {categories.length > 0 && (
+              <select
+                value={categoryFilter}
+                onChange={(e) => {
+                  setCategoryFilter(e.target.value);
+                  setPage(0);
+                }}
+                className="px-2.5 py-1 text-[11px] font-medium text-slate-600 bg-white border border-slate-200 rounded-md"
+              >
+                <option value="all">すべてのカテゴリー</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            )}
             <button
               onClick={fetchArticleList}
               disabled={listLoading}
@@ -364,14 +439,14 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2 mb-2">
                 <Spinner className="w-3.5 h-3.5 text-green-600" />
                 <span className="text-xs text-slate-600">
-                  {loadedCount}/{articleList.length} 記事の要約を生成中...
+                  {loadedCount}/{filteredArticles.length} 記事の要約を生成中...
                 </span>
               </div>
               <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-green-500 rounded-full transition-all duration-500 ease-out"
                   style={{
-                    width: `${articleList.length > 0 ? (loadedCount / articleList.length) * 100 : 0}%`,
+                    width: `${filteredArticles.length > 0 ? (loadedCount / filteredArticles.length) * 100 : 0}%`,
                   }}
                 />
               </div>
@@ -380,7 +455,7 @@ export default function DashboardPage() {
 
           {/* Article list */}
           <div className="space-y-3">
-            {articleList.map((item) => {
+            {paginatedArticles.map((item) => {
               const detail = detailLoaded[item.url];
               const isLoading = detailLoading[item.url] ?? false;
               const isSelected = selectedUrl === item.url;
@@ -404,6 +479,33 @@ export default function DashboardPage() {
               );
             })}
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-4">
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-30 transition-colors"
+              >
+                <BackArrow />
+                前へ
+              </button>
+              <span className="text-xs text-slate-500">
+                ページ {page + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-30 transition-colors"
+              >
+                次へ
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              </button>
+            </div>
+          )}
 
           {/* Bottom navigation bar */}
           <div className="flex items-center justify-between">
@@ -526,9 +628,39 @@ export default function DashboardPage() {
                   </div>
                   <div>
                     <p className="text-[10px] text-slate-400">配信先</p>
-                    <p className="text-sm font-medium text-slate-700">
-                      全フォロワー（Broadcast）
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="deliveryMode"
+                          value="broadcast"
+                          checked={deliveryMode === 'broadcast'}
+                          onChange={() => setDeliveryMode('broadcast')}
+                          className="accent-green-600"
+                        />
+                        <span className="text-xs text-slate-700">全体配信</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="deliveryMode"
+                          value="push"
+                          checked={deliveryMode === 'push'}
+                          onChange={() => setDeliveryMode('push')}
+                          className="accent-green-600"
+                        />
+                        <span className="text-xs text-slate-700">個別配信</span>
+                      </label>
+                    </div>
+                    {deliveryMode === 'push' && (
+                      <input
+                        type="text"
+                        placeholder="LINE User ID (U...)"
+                        value={pushUserId}
+                        onChange={(e) => setPushUserId(e.target.value)}
+                        className="mt-2 w-full px-3 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500"
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -641,6 +773,40 @@ export default function DashboardPage() {
                 </>
               )}
             </button>
+            {deliveryMode === 'push' && (
+              <>
+                <div className="h-px bg-slate-100" />
+                <button
+                  onClick={sendPush}
+                  disabled={pushSending || !pushUserId.trim() || sending || testSending}
+                  className="w-full py-3 bg-purple-600 text-white text-sm font-bold rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  {pushSending ? (
+                    <>
+                      <Spinner />
+                      個別配信中...
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+                        />
+                      </svg>
+                      個別配信を実行する
+                    </>
+                  )}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -174,7 +174,7 @@ export async function fetchArticleList(): Promise<ArticleListItem[]> {
   }
 
   log('info', `Total articles extracted: ${articles.length}`);
-  return articles.slice(0, config.blog.maxArticlesPerScrape);
+  return articles;
 }
 
 // ─── 記事詳細 ────────────────────────────────────────────────────────────────

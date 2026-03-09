@@ -9,6 +9,9 @@
     "src/app/api/line/broadcast/route.ts": {
       "maxDuration": 30
     },
+    "src/app/api/line/push/route.ts": {
+      "maxDuration": 30
+    },
     "src/app/api/line/scrape-list/route.ts": {
       "maxDuration": 30
     },

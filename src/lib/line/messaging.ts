@@ -189,3 +189,34 @@ export async function testBroadcastArticle(req: BroadcastRequest): Promise<Broad
     };
   }
 }
+
+/**
+ * 個別配信 — 指定ユーザーにPush送信
+ */
+export async function pushArticle(userId: string, req: BroadcastRequest): Promise<BroadcastResult> {
+  if (!userId) {
+    return {
+      success: false,
+      sentAt: new Date().toISOString(),
+      error: 'LINE User ID が指定されていません。',
+    };
+  }
+
+  try {
+    const flex: FlexContainer = buildFlexMessage(req);
+    await sendPush(userId, [
+      {
+        type: 'flex',
+        altText: `${req.summaryTitle}\n\n${req.summaryText}\n\n${req.articleUrl}`,
+        contents: flex,
+      },
+    ]);
+    return { success: true, sentAt: new Date().toISOString() };
+  } catch (error) {
+    return {
+      success: false,
+      sentAt: new Date().toISOString(),
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
