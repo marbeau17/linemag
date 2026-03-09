@@ -76,7 +76,13 @@ export async function fetchArticleList(): Promise<ArticleListItem[]> {
   $('.card').each((i, el) => {
     const $card = $(el);
     const $link = $card.find('a[href]').first();
-    const href = $link.attr('href');
+    let href = $link.attr('href');
+
+    // If no child <a>, check if .card is wrapped by <a>
+    if (!href) {
+      const $parentLink = $card.closest('a[href]');
+      href = $parentLink.attr('href');
+    }
 
     log('debug', `Card #${i} found`, {
       hasLink: !!href,

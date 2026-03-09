@@ -3,17 +3,19 @@
 interface Props {
   article: {
     url: string;
-    originalTitle: string;
-    catchyTitle: string;
-    summaryText: string;
+    title: string;
+    catchyTitle?: string;
+    summaryText?: string;
     thumbnailUrl: string | null;
     category: string | null;
   };
   isSelected: boolean;
+  isLoading?: boolean;
+  isDetailLoaded?: boolean;
   onSelect: () => void;
 }
 
-export default function ArticleCard({ article, isSelected, onSelect }: Props) {
+export default function ArticleCard({ article, isSelected, isLoading, isDetailLoaded, onSelect }: Props) {
   return (
     <button onClick={onSelect}
       className={`w-full text-left rounded-xl border-2 overflow-hidden transition-all duration-200 ${
@@ -24,7 +26,7 @@ export default function ArticleCard({ article, isSelected, onSelect }: Props) {
         <div className="w-28 h-28 sm:w-36 sm:h-36 shrink-0 bg-slate-100 overflow-hidden">
           {article.thumbnailUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={article.thumbnailUrl} alt={article.originalTitle} className="w-full h-full object-cover" />
+            <img src={article.thumbnailUrl} alt={article.title} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-slate-300">
               <svg className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth={1} viewBox="0 0 24 24">
@@ -37,8 +39,31 @@ export default function ArticleCard({ article, isSelected, onSelect }: Props) {
           {article.category && (
             <span className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-500 mb-1.5">{article.category}</span>
           )}
-          <h3 className="text-sm font-bold text-slate-800 leading-snug mb-1 line-clamp-2">{article.catchyTitle}</h3>
-          <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">{article.summaryText}</p>
+
+          {isDetailLoaded ? (
+            <>
+              <h3 className="text-sm font-bold text-slate-800 leading-snug mb-1 line-clamp-2">
+                {article.catchyTitle || article.title}
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">{article.summaryText}</p>
+            </>
+          ) : isLoading ? (
+            <>
+              <h3 className="text-sm font-bold text-slate-800 leading-snug mb-1 line-clamp-2 flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 text-blue-500 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span className="truncate">{article.title}</span>
+              </h3>
+              <p className="text-xs text-blue-500 leading-relaxed animate-pulse">AI要約を生成中...</p>
+            </>
+          ) : (
+            <>
+              <h3 className="text-sm font-bold text-slate-800 leading-snug mb-1 line-clamp-2">{article.title}</h3>
+              <p className="text-[11px] text-slate-400 leading-relaxed">クリックで要約を取得</p>
+            </>
+          )}
         </div>
         <div className="flex items-center pr-4">
           <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
