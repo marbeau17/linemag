@@ -29,6 +29,8 @@ export const config = {
   line: {
     broadcastUrl: 'https://api.line.me/v2/bot/message/broadcast',
     pushUrl: 'https://api.line.me/v2/bot/message/push',
+    followersUrl: 'https://api.line.me/v2/bot/followers/ids',
+    profileBaseUrl: 'https://api.line.me/v2/bot/profile',
     get channelAccessToken(): string {
       const t = process.env.LINE_CHANNEL_ACCESS_TOKEN;
       if (!t) throw new Error('LINE_CHANNEL_ACCESS_TOKEN is not set');
