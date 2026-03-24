@@ -83,7 +83,7 @@ function generateId(): string {
 
 // ─── ストレージクラス ────────────────────────────────────────────────────────
 
-class FileStorage {
+export class FileStorage {
   // ── 送信済みURL ──
 
   async getSentUrls(): Promise<string[]> {
@@ -171,4 +171,6 @@ class FileStorage {
   }
 }
 
-export const storage = new FileStorage();
+// singleton は storage-factory.ts から提供される
+// 直接インポートする場合: import { storage } from './storage-factory'
+export const fileStorage = new FileStorage();

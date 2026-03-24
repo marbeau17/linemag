@@ -3,7 +3,7 @@
 // 実行ログ記録 — 各処理ステップの結果を永続化
 // ============================================================================
 
-import { storage } from './storage';
+import { storage } from './storage-factory';
 import type { ExecutionLog } from './storage';
 
 type LogStep = ExecutionLog['step'];

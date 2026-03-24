@@ -34,3 +34,10 @@ next-env.d.ts
 /data/
 
 .vercel
+
+# playwright
+/playwright-report/
+/test-results/
+
+# claude
+.claude/

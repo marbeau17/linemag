@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { promises as fs } from 'fs';
-import path from 'path';
+import { upsertCustomerByLineUserId, getCustomers } from '@/lib/crm/customers';
+import { trackAction } from '@/lib/crm/actions';
 
 // ============================================================================
-// LINE Webhook — メッセージ受信時にUser IDを記録
+// LINE Webhook — Supabase-backed customer tracking
 // LINE Developers Console の Webhook URL にこのエンドポイントを設定:
 //   https://linemag.vercel.app/api/line/webhook
 // ============================================================================
@@ -26,30 +26,6 @@ interface WebhookBody {
   events: WebhookEvent[];
 }
 
-interface StoredUser {
-  userId: string;
-  firstSeen: string;
-  lastSeen: string;
-  messageCount: number;
-}
-
-const DATA_DIR = path.join(process.cwd(), 'data');
-const USERS_FILE = path.join(DATA_DIR, 'webhook-users.json');
-
-async function loadUsers(): Promise<StoredUser[]> {
-  try {
-    const raw = await fs.readFile(USERS_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-async function saveUsers(users: StoredUser[]): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2));
-}
-
 // POST — LINE Webhookイベント受信
 export async function POST(request: NextRequest) {
   try {
@@ -60,44 +36,114 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ status: 'ok' });
     }
 
-    const users = await loadUsers();
     const now = new Date().toISOString();
 
     for (const event of body.events) {
       const userId = event.source?.userId;
       if (!userId) continue;
 
-      const existing = users.find((u) => u.userId === userId);
-      if (existing) {
-        existing.lastSeen = now;
-        existing.messageCount += 1;
-      } else {
-        users.push({
-          userId,
-          firstSeen: now,
-          lastSeen: now,
-          messageCount: 1,
-        });
-      }
+      try {
+        switch (event.type) {
+          case 'follow': {
+            const customer = await upsertCustomerByLineUserId(userId, {
+              firstSeenAt: now,
+              lastSeenAt: now,
+              blockedAt: null as unknown as string,
+            });
+            await trackAction({
+              customerId: customer.id,
+              actionType: 'follow',
+              source: 'line_webhook',
+            });
+            console.log(`[webhook] follow: ${userId}`);
+            break;
+          }
 
-      console.log(`[webhook] User: ${userId}, event: ${event.type}`);
+          case 'unfollow': {
+            const customer = await upsertCustomerByLineUserId(userId, {
+              blockedAt: now,
+              lastSeenAt: now,
+            });
+            await trackAction({
+              customerId: customer.id,
+              actionType: 'unfollow',
+              source: 'line_webhook',
+            });
+            console.log(`[webhook] unfollow: ${userId}`);
+            break;
+          }
+
+          case 'message': {
+            // Fetch existing customer first so we can increment message_count
+            const customer = await upsertCustomerByLineUserId(userId, {
+              lastSeenAt: now,
+            });
+
+            // Increment message_count via a second upsert
+            await upsertCustomerByLineUserId(userId, {
+              messageCount: (customer.messageCount ?? 0) + 1,
+              lastSeenAt: now,
+            });
+
+            await trackAction({
+              customerId: customer.id,
+              actionType: 'message_received',
+              actionDetail: {
+                messageType: event.message?.type,
+                text: event.message?.text,
+              },
+              source: 'line_webhook',
+            });
+            console.log(`[webhook] message: ${userId}`);
+            break;
+          }
+
+          default: {
+            // For any other event type, still upsert & track
+            const customer = await upsertCustomerByLineUserId(userId, {
+              lastSeenAt: now,
+            });
+            await trackAction({
+              customerId: customer.id,
+              actionType: 'message_received',
+              actionDetail: { eventType: event.type },
+              source: 'line_webhook',
+            });
+            console.log(`[webhook] ${event.type}: ${userId}`);
+            break;
+          }
+        }
+      } catch (eventError) {
+        // Log but don't fail the whole webhook — LINE requires 200 response
+        console.error(`[webhook] Error processing event for ${userId}:`, eventError);
+      }
     }
 
-    await saveUsers(users);
-    return NextResponse.json({ status: 'ok', usersCount: users.length });
+    return NextResponse.json({ status: 'ok' });
   } catch (error) {
     console.error('[webhook]', error);
-    return NextResponse.json({ status: 'error' }, { status: 500 });
+    // LINE requires 200 even on errors to avoid retries
+    return NextResponse.json({ status: 'ok' });
   }
 }
 
-// GET — 記録済みUser ID一覧を取得
+// GET — 記録済み顧客一覧を取得（最新100件、last_seen_at降順）
 export async function GET() {
   try {
-    const users = await loadUsers();
-    return NextResponse.json({ users, count: users.length });
+    const result = await getCustomers({
+      perPage: 100,
+      sortBy: 'last_seen_at',
+      sortOrder: 'desc',
+    });
+    return NextResponse.json({
+      customers: result.customers,
+      count: result.total,
+    });
   } catch (error) {
     console.error('[webhook:get]', error);
-    return NextResponse.json({ error: 'ユーザー一覧の取得に失敗しました' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'ユーザー一覧の取得に失敗しました' },
+      { status: 500 },
+    );
   }
 }

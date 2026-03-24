@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { storage } from '@/lib/line/storage';
+import { storage } from '@/lib/line/storage-factory';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);

@@ -3,7 +3,7 @@ import { scrapeLatestArticles } from '@/lib/line/scraper';
 import { summarizeArticle } from '@/lib/line/summarizer';
 import { broadcastArticle } from '@/lib/line/messaging';
 import { LineApiError } from '@/lib/line/messaging';
-import { storage } from '@/lib/line/storage';
+import { storage } from '@/lib/line/storage-factory';
 import { logExecution } from '@/lib/line/logger';
 import { notifyOnError } from '@/lib/line/notifier';
 
