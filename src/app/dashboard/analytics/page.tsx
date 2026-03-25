@@ -83,11 +83,13 @@ function calcDateRange(period: Period): { from: string; to: string } {
   }
 }
 
-function formatNumber(n: number): string {
+function formatNumber(n: number | null | undefined): string {
+  if (n == null || isNaN(n)) return '-';
   return n.toLocaleString('ja-JP');
 }
 
-function formatPercent(n: number): string {
+function formatPercent(n: number | null | undefined): string {
+  if (n == null || isNaN(n)) return '-';
   return `${n.toFixed(1)}%`;
 }
 
@@ -150,28 +152,35 @@ function KpiCard({
 }
 
 function BarChart({ data, title, color }: { data: number[]; title: string; color: string }) {
-  const max = Math.max(...data, 1);
+  const safeData = Array.isArray(data) ? data : [];
+  const max = safeData.length > 0 ? Math.max(...safeData, 1) : 1;
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <h3 className="text-sm font-semibold text-slate-700 mb-4">{title}</h3>
-      <div className="flex items-end gap-1.5 h-40">
-        {data.map((v, i) => (
-          <div
-            key={i}
-            className="flex-1 rounded-t transition-all duration-300"
-            style={{
-              height: `${(v / max) * 100}%`,
-              backgroundColor: color,
-              opacity: 0.7 + (v / max) * 0.3,
-            }}
-            title={String(v)}
-          />
-        ))}
-      </div>
-      <div className="flex justify-between mt-2 text-xs text-slate-400">
-        <span>開始</span>
-        <span>終了</span>
-      </div>
+      {safeData.length === 0 ? (
+        <p className="text-sm text-slate-400 py-8 text-center">データがありません</p>
+      ) : (
+      <>
+        <div className="flex items-end gap-1.5 h-40">
+          {safeData.map((v, i) => (
+            <div
+              key={i}
+              className="flex-1 rounded-t transition-all duration-300"
+              style={{
+                height: `${(v / max) * 100}%`,
+                backgroundColor: color,
+                opacity: 0.7 + (v / max) * 0.3,
+              }}
+              title={String(v)}
+            />
+          ))}
+        </div>
+        <div className="flex justify-between mt-2 text-xs text-slate-400">
+          <span>開始</span>
+          <span>終了</span>
+        </div>
+      </>
+      )}
     </div>
   );
 }
@@ -265,12 +274,15 @@ export default function AnalyticsDashboardPage() {
 
     try {
       const res = await fetch(`/api/analytics/kpi?from=${from}&to=${to}`);
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      if (!res.ok) throw new Error(`データの取得に失敗しました（ステータス: ${res.status}）`);
       const data: KpiData = await res.json();
       setKpi(data);
-    } catch {
-      // Fall back to mock data during development
+    } catch (e) {
+      // Fall back to mock data during development, but show warning
+      console.warn('KPI fetch failed, using mock data:', e);
       setKpi(mockKpi());
+      // Uncomment the next line to show errors to the user in production:
+      // setError(e instanceof Error ? e.message : 'データの取得に失敗しました');
     } finally {
       setLoading(false);
     }
@@ -360,26 +372,26 @@ export default function AnalyticsDashboardPage() {
       {kpi && !loading && (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard label="配信数" value={kpi.deliveryCount} change={kpi.deliveryCountChange} />
-            <KpiCard label="開封率" value={kpi.openRate} change={kpi.openRateChange} format="percent" />
-            <KpiCard label="総顧客数" value={kpi.totalCustomers} change={kpi.totalCustomersChange} />
-            <KpiCard label="予約数" value={kpi.bookingCount} change={kpi.bookingCountChange} />
+            <KpiCard label="配信数" value={kpi.deliveryCount ?? 0} change={kpi.deliveryCountChange ?? 0} />
+            <KpiCard label="開封率" value={kpi.openRate ?? 0} change={kpi.openRateChange ?? 0} format="percent" />
+            <KpiCard label="総顧客数" value={kpi.totalCustomers ?? 0} change={kpi.totalCustomersChange ?? 0} />
+            <KpiCard label="予約数" value={kpi.bookingCount ?? 0} change={kpi.bookingCountChange ?? 0} />
           </div>
 
           {/* --------------------------------------------------------------- */}
           {/* Charts                                                          */}
           {/* --------------------------------------------------------------- */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <BarChart data={kpi.deliveryTrend} title="配信効果推移" color="#6366f1" />
-            <BarChart data={kpi.customerTrend} title="顧客成長推移" color="#10b981" />
+            <BarChart data={kpi.deliveryTrend ?? []} title="配信効果推移" color="#6366f1" />
+            <BarChart data={kpi.customerTrend ?? []} title="顧客成長推移" color="#10b981" />
           </div>
 
           {/* --------------------------------------------------------------- */}
           {/* Bottom section                                                  */}
           {/* --------------------------------------------------------------- */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <CouponStatusCard issued={kpi.coupon.issued} used={kpi.coupon.used} />
-            <BookingStatusCard weekTotal={kpi.booking.weekTotal} cancelRate={kpi.booking.cancelRate} />
+            <CouponStatusCard issued={kpi.coupon?.issued ?? 0} used={kpi.coupon?.used ?? 0} />
+            <BookingStatusCard weekTotal={kpi.booking?.weekTotal ?? 0} cancelRate={kpi.booking?.cancelRate ?? 0} />
           </div>
         </>
       )}

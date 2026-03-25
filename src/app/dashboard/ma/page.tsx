@@ -26,7 +26,7 @@ interface Scenario {
   targetSegmentId?: string;
   isActive: boolean;
   steps: ScenarioStep[];
-  stats: {
+  stats?: {
     sent: number;
     opened: number;
     clicked: number;
@@ -346,6 +346,7 @@ function CreateModal({
     try {
       const res = await fetch('/api/ma/scenarios', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
@@ -549,6 +550,7 @@ function ScenarioCard({
     try {
       const res = await fetch(`/api/ma/scenarios/${scenario.id}`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ steps }),
       });
@@ -607,19 +609,19 @@ function ScenarioCard({
             <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
             </svg>
-            送信 {scenario.stats.sent.toLocaleString()}
+            送信 {(scenario.stats?.sent ?? 0).toLocaleString()}
           </span>
           <span className="flex items-center gap-1">
             <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 9v.906a2.25 2.25 0 01-1.183 1.981l-6.478 3.488M2.25 9v.906a2.25 2.25 0 001.183 1.981l6.478 3.488m8.839 2.51l-4.66-2.51m0 0l-1.023-.55a2.25 2.25 0 00-2.134 0l-1.022.55m0 0l-4.661 2.51" />
             </svg>
-            開封 {scenario.stats.opened.toLocaleString()}
+            開封 {(scenario.stats?.opened ?? 0).toLocaleString()}
           </span>
           <span className="flex items-center gap-1">
             <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zM12 2.25V4.5m5.834.166l-1.591 1.591M20.25 10.5H18M7.757 14.743l-1.59 1.59M6 10.5H3.75m4.007-4.243l-1.59-1.59" />
             </svg>
-            クリック {scenario.stats.clicked.toLocaleString()}
+            クリック {(scenario.stats?.clicked ?? 0).toLocaleString()}
           </span>
           <span className="text-slate-300">|</span>
           <span>{scenario.steps?.length || 0}ステップ</span>
@@ -688,10 +690,18 @@ export default function MAPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/ma/scenarios');
-      if (!res.ok) throw new Error('シナリオ一覧の取得に失敗しました');
-      const data = await res.json();
-      setScenarios(Array.isArray(data) ? data : data.scenarios ?? []);
+      const res = await fetch('/api/ma/scenarios', { credentials: 'include' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'シナリオ一覧の取得に失敗しました');
+      }
+      const data = await res.json().catch(() => null);
+      if (data == null) {
+        setScenarios([]);
+      } else {
+        const list = Array.isArray(data) ? data : Array.isArray(data.scenarios) ? data.scenarios : [];
+        setScenarios(list);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました');
     } finally {
@@ -702,10 +712,12 @@ export default function MAPage() {
   // Fetch segments
   const fetchSegments = useCallback(async () => {
     try {
-      const res = await fetch('/api/crm/segments');
+      const res = await fetch('/api/crm/segments', { credentials: 'include' });
       if (!res.ok) return;
-      const data = await res.json();
-      setSegments(Array.isArray(data) ? data : data.segments ?? []);
+      const data = await res.json().catch(() => null);
+      if (data == null) return;
+      const list = Array.isArray(data) ? data : Array.isArray(data.segments) ? data.segments : [];
+      setSegments(list);
     } catch {
       // Segments are optional; silently ignore errors
     }
@@ -721,6 +733,7 @@ export default function MAPage() {
     try {
       const res = await fetch(`/api/ma/scenarios/${id}`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: active }),
       });
@@ -736,7 +749,7 @@ export default function MAPage() {
   // Delete
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/ma/scenarios/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/ma/scenarios/${id}`, { method: 'DELETE', credentials: 'include' });
       if (!res.ok) throw new Error('削除に失敗しました');
       setScenarios((prev) => prev.filter((s) => s.id !== id));
     } catch {

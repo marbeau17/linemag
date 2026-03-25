@@ -39,11 +39,17 @@ const STATUS_OPTIONS = [
 // Helpers
 // ---------------------------------------------------------------------------
 function formatDateJST(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' });
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr || '-';
+    return d.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' });
+  } catch {
+    return dateStr || '-';
+  }
 }
 
 function formatTime(time: string): string {
+  if (!time || time.length < 5) return '--:--';
   return time.slice(0, 5);
 }
 
@@ -72,8 +78,13 @@ export default function ReservationsPage() {
   // Fetch consultants (once)
   useEffect(() => {
     fetch('/api/booking/consultants')
-      .then((r) => r.json())
-      .then((data) => setConsultants(data.consultants ?? data ?? []))
+      .then((r) => {
+        if (!r.ok) return [];
+        return r.json();
+      })
+      .then((data) => {
+        if (data) setConsultants(Array.isArray(data) ? data : data.consultants ?? []);
+      })
       .catch(() => {});
   }, []);
 

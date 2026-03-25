@@ -4,15 +4,37 @@ import { useState, useEffect } from 'react';
 import type { ScheduleConfig, TemplateId } from '@/types/line';
 import { TEMPLATE_DEFINITIONS } from '@/lib/line/templates';
 
+async function safeJsonParse(res: Response): Promise<Record<string, unknown>> {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
 export default function SchedulePage() {
   const [config, setConfig] = useState<ScheduleConfig>({
     enabled: false, times: ['09:00', '18:00'], templateId: 'daily-column', maxArticlesPerRun: 3,
   });
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
-    fetch('/api/line/schedule').then(r => r.json()).then(setConfig).catch(() => {});
+    (async () => {
+      try {
+        const r = await fetch('/api/line/schedule');
+        if (!r.ok) throw new Error('スケジュール設定の取得に失敗しました');
+        const d = await safeJsonParse(r);
+        if (d && typeof d === 'object') {
+          setConfig(d as unknown as ScheduleConfig);
+        }
+      } catch (e) {
+        setMsg({ ok: false, text: e instanceof Error ? e.message : 'スケジュール設定の取得に失敗しました' });
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   const save = async () => {
@@ -22,11 +44,11 @@ export default function SchedulePage() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      setConfig(d.schedule);
-      setMsg('設定を保存しました');
-    } catch (e) { setMsg(e instanceof Error ? e.message : 'エラー'); }
+      const d = await safeJsonParse(r);
+      if (!r.ok) throw new Error((d.error as string) || '設定の保存に失敗しました');
+      if (d.schedule) setConfig(d.schedule as unknown as ScheduleConfig);
+      setMsg({ ok: true, text: '設定を保存しました' });
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : 'エラー' }); }
     finally { setSaving(false); }
   };
 
@@ -37,8 +59,18 @@ export default function SchedulePage() {
         <p className="text-sm text-slate-400 mt-1">毎日の自動配信時刻とテンプレートを設定</p>
       </div>
 
+      {loading && (
+        <div className="px-4 py-3 rounded-lg text-sm bg-slate-50 text-slate-500 border border-slate-200">
+          設定を読み込み中...
+        </div>
+      )}
+
       {msg && (
-        <div className="px-4 py-3 rounded-lg text-sm bg-green-50 text-green-700 border border-green-200">{msg}</div>
+        <div className={`px-4 py-3 rounded-lg text-sm ${
+          msg.ok
+            ? 'bg-green-50 text-green-700 border border-green-200'
+            : 'bg-red-50 text-red-700 border border-red-200'
+        }`}>{msg.text}</div>
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">

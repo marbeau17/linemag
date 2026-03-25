@@ -127,30 +127,48 @@ export default function BookingPage() {
   }, []);
 
   // ---- fetch slot summaries when entering step 2 ----
+  const [slotsError, setSlotsError] = useState<string | null>(null);
+
   useEffect(() => {
     if (step !== 2 || !selectedService) return;
     setLoadingSlots(true);
     setSlotSummaries([]);
+    setSlotsError(null);
     fetch(
       `/api/booking/slots?startDate=${startDate}&endDate=${endDate}&durationMinutes=${selectedService.duration}`,
     )
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error('空き状況の取得に失敗しました');
+        return r.json();
+      })
       .then((data: SlotSummary[]) => setSlotSummaries(Array.isArray(data) ? data : []))
-      .catch(() => setSlotSummaries([]))
+      .catch((e) => {
+        setSlotSummaries([]);
+        setSlotsError(e instanceof Error ? e.message : '空き状況の取得に失敗しました');
+      })
       .finally(() => setLoadingSlots(false));
   }, [step, selectedService, startDate, endDate]);
 
   // ---- fetch time slots when entering step 3 ----
+  const [timesError, setTimesError] = useState<string | null>(null);
+
   useEffect(() => {
     if (step !== 3 || !selectedDate || !selectedService) return;
     setLoadingTimes(true);
     setTimeSlots([]);
+    setTimesError(null);
     fetch(
       `/api/booking/slots/${selectedDate}?durationMinutes=${selectedService.duration}`,
     )
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error('時間帯の取得に失敗しました');
+        return r.json();
+      })
       .then((data: TimeSlot[]) => setTimeSlots(Array.isArray(data) ? data : []))
-      .catch(() => setTimeSlots([]))
+      .catch((e) => {
+        setTimeSlots([]);
+        setTimesError(e instanceof Error ? e.message : '時間帯の取得に失敗しました');
+      })
       .finally(() => setLoadingTimes(false));
   }, [step, selectedDate, selectedService]);
 
@@ -234,9 +252,9 @@ export default function BookingPage() {
           <p className="text-sm text-slate-500 mb-6">以下のリンクから当日ご参加ください。</p>
 
           <div className="w-full bg-white rounded-xl border border-slate-200 p-5 text-left space-y-3 mb-6">
-            <Row label="相談種別" value={selectedService!.name} />
-            <Row label="日時" value={`${displayDate(selectedDate!)} ${selectedSlot!.startTime} - ${selectedSlot!.endTime}`} />
-            <Row label="担当" value={selectedSlot!.consultantName} />
+            <Row label="相談種別" value={selectedService?.name ?? '-'} />
+            <Row label="日時" value={selectedDate && selectedSlot ? `${displayDate(selectedDate)} ${selectedSlot.startTime} - ${selectedSlot.endTime}` : '-'} />
+            <Row label="担当" value={selectedSlot?.consultantName ?? '-'} />
           </div>
 
           {result.meetUrl && (
@@ -299,6 +317,7 @@ export default function BookingPage() {
             days={days}
             availabilityMap={availabilityMap}
             loading={loadingSlots}
+            error={slotsError}
             onSelect={selectDate}
           />
         )}
@@ -306,15 +325,16 @@ export default function BookingPage() {
           <Step3
             slots={timeSlots}
             loading={loadingTimes}
+            error={timesError}
             selectedSlot={selectedSlot}
             onSelect={selectSlot}
           />
         )}
-        {step === 4 && (
+        {step === 4 && selectedService && selectedDate && selectedSlot && (
           <Step4
-            service={selectedService!}
-            date={selectedDate!}
-            slot={selectedSlot!}
+            service={selectedService}
+            date={selectedDate}
+            slot={selectedSlot}
             notes={notes}
             onNotesChange={setNotes}
             submitting={submitting}
@@ -387,11 +407,13 @@ function Step2({
   days,
   availabilityMap,
   loading,
+  error,
   onSelect,
 }: {
   days: Date[];
   availabilityMap: Map<string, number>;
   loading: boolean;
+  error: string | null;
   onSelect: (iso: string) => void;
 }) {
   // Group days by month for display
@@ -410,6 +432,17 @@ function Step2({
       <div className="flex items-center justify-center py-16">
         <Spinner />
         <span className="ml-2 text-sm text-slate-400">空き状況を取得中…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-16">
+        <div className="px-4 py-3 rounded-lg text-sm bg-red-50 text-red-600 border border-red-200 mb-4">
+          {error}
+        </div>
+        <p className="text-xs text-slate-400">時間を置いて再度お試しください。</p>
       </div>
     );
   }
@@ -524,11 +557,13 @@ function Step2({
 function Step3({
   slots,
   loading,
+  error,
   selectedSlot,
   onSelect,
 }: {
   slots: TimeSlot[];
   loading: boolean;
+  error: string | null;
   selectedSlot: TimeSlot | null;
   onSelect: (slot: TimeSlot) => void;
 }) {
@@ -537,6 +572,17 @@ function Step3({
       <div className="flex items-center justify-center py-16">
         <Spinner />
         <span className="ml-2 text-sm text-slate-400">時間帯を取得中…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-16">
+        <div className="px-4 py-3 rounded-lg text-sm bg-red-50 text-red-600 border border-red-200 mb-4">
+          {error}
+        </div>
+        <p className="text-xs text-slate-400">時間を置いて再度お試しください。</p>
       </div>
     );
   }

@@ -17,21 +17,47 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const supabase = createClient();
+      // Env var guard — surface a clear message instead of crashing
+      if (
+        !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+        !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      ) {
+        setError('Supabase の環境変数が設定されていません。管理者に連絡してください。');
+        return;
+      }
+
+      let supabase;
+      try {
+        supabase = createClient();
+      } catch {
+        setError('認証クライアントの初期化に失敗しました。設定を確認してください。');
+        return;
+      }
+
       const { error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (authError) {
-        setError('メールアドレスまたはパスワードが正しくありません');
+        // Distinguish network errors from auth errors
+        if (authError.message?.includes('fetch') || authError.status === 0) {
+          setError('ネットワークエラーが発生しました。接続を確認してください。');
+        } else {
+          setError('メールアドレスまたはパスワードが正しくありません');
+        }
         return;
       }
 
       router.push('/dashboard');
       router.refresh();
-    } catch {
-      setError('ログイン中にエラーが発生しました');
+    } catch (err) {
+      // Network / unexpected errors
+      if (err instanceof TypeError && err.message?.includes('fetch')) {
+        setError('ネットワークエラーが発生しました。接続を確認してください。');
+      } else {
+        setError('ログイン中にエラーが発生しました');
+      }
     } finally {
       setLoading(false);
     }

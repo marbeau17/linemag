@@ -69,6 +69,7 @@ export default function ReservationCalendarPage() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [settings, setSettings] = useState<BookingSettings | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Side panel
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -77,26 +78,36 @@ export default function ReservationCalendarPage() {
   /* ----- fetch data whenever month changes ----- */
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const dateFrom = `${year}-${pad(month + 1)}-01`;
       const dateTo = `${year}-${pad(month + 1)}-${pad(lastDayOfMonth(year, month))}`;
+
       const [resRes, settingsRes] = await Promise.all([
-        fetch(`/api/booking/reservations?dateFrom=${dateFrom}&dateTo=${dateTo}`),
-        fetch('/api/booking/settings'),
+        fetch(`/api/booking/reservations?dateFrom=${dateFrom}&dateTo=${dateTo}`).catch(() => null),
+        fetch('/api/booking/settings').catch(() => null),
       ]);
 
-      if (resRes.ok) {
-        const data = await resRes.json();
-        setReservations(Array.isArray(data) ? data : data.reservations ?? []);
+      if (resRes && resRes.ok) {
+        const data = await resRes.json().catch(() => null);
+        if (data) {
+          setReservations(Array.isArray(data) ? data : data.reservations ?? []);
+        } else {
+          setReservations([]);
+        }
       } else {
         setReservations([]);
+        if (resRes && !resRes.ok) {
+          setError('予約データの取得に失敗しました');
+        }
       }
 
-      if (settingsRes.ok) {
-        setSettings(await settingsRes.json());
+      if (settingsRes && settingsRes.ok) {
+        const settingsData = await settingsRes.json().catch(() => null);
+        if (settingsData) setSettings(settingsData);
       }
     } catch {
-      /* silently degrade */
+      setError('データの読み込みに失敗しました');
     } finally {
       setLoading(false);
     }
@@ -141,6 +152,7 @@ export default function ReservationCalendarPage() {
   /* ----- quick actions ----- */
   async function handleAction(reservationId: string, action: 'confirm' | 'cancel') {
     setActionLoading(reservationId);
+    setError(null);
     try {
       const newStatus = action === 'confirm' ? 'confirmed' : 'cancelled';
       const res = await fetch(`/api/booking/reservations/${reservationId}`, {
@@ -150,9 +162,12 @@ export default function ReservationCalendarPage() {
       });
       if (res.ok) {
         await fetchData();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body?.error || '操作に失敗しました');
       }
     } catch {
-      /* ignore */
+      setError('操作に失敗しました');
     } finally {
       setActionLoading(null);
     }
@@ -179,6 +194,16 @@ export default function ReservationCalendarPage() {
         <h1 className="text-xl font-bold text-slate-800">予約カレンダー</h1>
         <p className="text-sm text-slate-400 mt-1">月間の予約状況を確認</p>
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="px-4 py-3 rounded-lg text-sm bg-red-50 text-red-700 border border-red-200 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="ml-4 text-red-500 hover:text-red-700 text-xs font-medium">
+            閉じる
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col lg:flex-row gap-6">
         {/* ============== Calendar ============== */}
@@ -516,6 +541,9 @@ function TimelineBar({
 }
 
 function timeToMinutes(t: string): number {
-  const [h, m] = t.split(':').map(Number);
-  return (h || 0) * 60 + (m || 0);
+  if (!t || typeof t !== 'string') return 0;
+  const parts = t.split(':');
+  const h = parseInt(parts[0] ?? '0', 10);
+  const m = parseInt(parts[1] ?? '0', 10);
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
 }

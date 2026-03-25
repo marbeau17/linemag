@@ -106,10 +106,18 @@ export default function ABTestsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/ma/ab-tests');
-      if (!res.ok) throw new Error('A/Bテスト一覧の取得に失敗しました');
-      const data = await res.json();
-      setTests(data.tests ?? data ?? []);
+      const res = await fetch('/api/ma/ab-tests', { credentials: 'include' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'A/Bテスト一覧の取得に失敗しました');
+      }
+      const data = await res.json().catch(() => null);
+      if (data == null) {
+        setTests([]);
+      } else {
+        const list = Array.isArray(data) ? data : Array.isArray(data.tests) ? data.tests : [];
+        setTests(list);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました');
     } finally {
@@ -128,10 +136,12 @@ export default function ABTestsPage() {
   const fetchSegments = async () => {
     setSegmentsLoading(true);
     try {
-      const res = await fetch('/api/crm/segments');
-      if (!res.ok) throw new Error('セグメント取得に失敗しました');
-      const data = await res.json();
-      setSegments(data.segments ?? data ?? []);
+      const res = await fetch('/api/crm/segments', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      if (data == null) return;
+      const list = Array.isArray(data) ? data : Array.isArray(data.segments) ? data.segments : [];
+      setSegments(list);
     } catch {
       // silently fail, user can still type
     } finally {
@@ -186,6 +196,7 @@ export default function ABTestsPage() {
 
       const res = await fetch('/api/ma/ab-tests', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
@@ -211,7 +222,7 @@ export default function ABTestsPage() {
   const handleAction = async (testId: string, action: 'start' | 'stop') => {
     setMsg(null);
     try {
-      const res = await fetch(`/api/ma/ab-tests/${testId}/${action}`, { method: 'POST' });
+      const res = await fetch(`/api/ma/ab-tests/${testId}/${action}`, { method: 'POST', credentials: 'include' });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || '操作に失敗しました');
@@ -303,10 +314,11 @@ export default function ABTestsPage() {
               {[
                 { label: 'A', variant: viewingTest.variant_a, isWinner: viewingTest.winner === 'A' },
                 { label: 'B', variant: viewingTest.variant_b, isWinner: viewingTest.winner === 'B' },
-              ].map(({ label, variant, isWinner }) => {
-                const openRate = parseFloat(rate(variant.opened, variant.delivered));
-                const clickRate = parseFloat(rate(variant.clicked, variant.delivered));
-                const cvRate = parseFloat(rate(variant.converted, variant.delivered));
+              ].map(({ label, variant: rawVariant, isWinner }) => {
+                const variant = rawVariant ?? { name: label, config: {}, delivered: 0, opened: 0, clicked: 0, converted: 0 };
+                const openRate = parseFloat(rate(variant.opened ?? 0, variant.delivered ?? 0));
+                const clickRate = parseFloat(rate(variant.clicked ?? 0, variant.delivered ?? 0));
+                const cvRate = parseFloat(rate(variant.converted ?? 0, variant.delivered ?? 0));
 
                 return (
                   <div
@@ -335,10 +347,10 @@ export default function ABTestsPage() {
                     {/* Counts */}
                     <div className="grid grid-cols-2 gap-3">
                       {[
-                        { label: '配信数', value: variant.delivered },
-                        { label: '開封数', value: variant.opened },
-                        { label: 'クリック数', value: variant.clicked },
-                        { label: 'CV数', value: variant.converted },
+                        { label: '配信数', value: variant.delivered ?? 0 },
+                        { label: '開封数', value: variant.opened ?? 0 },
+                        { label: 'クリック数', value: variant.clicked ?? 0 },
+                        { label: 'CV数', value: variant.converted ?? 0 },
                       ].map((m) => (
                         <div key={m.label}>
                           <span className="block text-xs font-semibold text-slate-500">{m.label}</span>
@@ -390,8 +402,8 @@ export default function ABTestsPage() {
         <div className="grid grid-cols-1 gap-4">
           {tests.map((test) => {
             const status = STATUS_MAP[test.status];
-            const aOpenRate = rate(test.variant_a.opened, test.variant_a.delivered);
-            const bOpenRate = rate(test.variant_b.opened, test.variant_b.delivered);
+            const aOpenRate = rate(test.variant_a?.opened ?? 0, test.variant_a?.delivered ?? 0);
+            const bOpenRate = rate(test.variant_b?.opened ?? 0, test.variant_b?.delivered ?? 0);
 
             return (
               <div

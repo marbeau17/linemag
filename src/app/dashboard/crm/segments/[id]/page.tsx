@@ -124,7 +124,7 @@ export default function SegmentDetailPage({
       const res = await fetch(`/api/crm/segments/${id}`);
       if (!res.ok) throw new Error('セグメントの取得に失敗しました');
       const data = await res.json();
-      setSegment(data.segment);
+      setSegment(data.segment ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました');
     } finally {
@@ -201,7 +201,7 @@ export default function SegmentDetailPage({
       });
       if (!res.ok) throw new Error('更新に失敗しました');
       const data = await res.json();
-      setSegment(data.segment);
+      setSegment(data.segment ?? null);
       setEditing(false);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'エラーが発生しました');
@@ -424,13 +424,13 @@ export default function SegmentDetailPage({
       {/* ------------------------------------------------------------------ */}
       {/*  Rules section (dynamic segments only)                             */}
       {/* ------------------------------------------------------------------ */}
-      {segment.type === 'dynamic' && segment.rules.length > 0 && (
+      {segment.type === 'dynamic' && (segment.rules ?? []).length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100">
             <h2 className="text-sm font-bold text-slate-800">ルール</h2>
           </div>
           <div className="p-5 space-y-2">
-            {segment.rules.map((rule, i) => (
+            {(segment.rules ?? []).map((rule, i) => (
               <div
                 key={i}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 text-sm"

@@ -45,9 +45,18 @@ export default function LogsPage() {
       const params = new URLSearchParams({ limit: '100' });
       if (stepFilter) params.set('step', stepFilter);
       const res = await fetch(`/api/line/logs?${params}`);
-      if (!res.ok) throw new Error('ログの取得に失敗しました');
+      if (!res.ok) {
+        let errorMsg = 'ログの取得に失敗しました';
+        try {
+          const errData = await res.json();
+          if (errData?.error) errorMsg = errData.error;
+        } catch {
+          // Response was not JSON; use default message
+        }
+        throw new Error(errorMsg);
+      }
       const data = await res.json();
-      setLogs(data.logs || []);
+      setLogs(Array.isArray(data?.logs) ? data.logs : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました');
     } finally {

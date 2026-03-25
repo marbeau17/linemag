@@ -116,7 +116,7 @@ export default function DeliveryAnalyticsPage() {
 
   // Compute max value for the trend chart y-axis
   const trendMax = useMemo(() => {
-    if (!data?.trend.length) return 100;
+    if (!data?.trend?.length) return 100;
     const max = Math.max(...data.trend.map((d) => d.sent));
     // Round up to a nice number
     const magnitude = Math.pow(10, Math.floor(Math.log10(max || 1)));
@@ -125,7 +125,7 @@ export default function DeliveryAnalyticsPage() {
 
   // Compute max for type breakdown
   const typeMax = useMemo(() => {
-    if (!data?.typeBreakdown.length) return 100;
+    if (!data?.typeBreakdown?.length) return 100;
     return Math.max(...data.typeBreakdown.map((t) => t.count)) || 100;
   }, [data]);
 
@@ -217,7 +217,7 @@ export default function DeliveryAnalyticsPage() {
             {[
               {
                 label: '配信数',
-                value: formatNumber(data.kpi.totalSent),
+                value: formatNumber(data.kpi?.totalSent ?? 0),
                 sub: '合計配信メッセージ数',
                 color: 'text-blue-600',
                 bg: 'bg-blue-50',
@@ -232,7 +232,7 @@ export default function DeliveryAnalyticsPage() {
               },
               {
                 label: '開封率',
-                value: formatPercent(data.kpi.openRate),
+                value: formatPercent(data.kpi?.openRate ?? 0),
                 sub: 'メッセージ開封率',
                 color: 'text-green-600',
                 bg: 'bg-green-50',
@@ -247,7 +247,7 @@ export default function DeliveryAnalyticsPage() {
               },
               {
                 label: 'クリック率',
-                value: formatPercent(data.kpi.clickRate),
+                value: formatPercent(data.kpi?.clickRate ?? 0),
                 sub: 'リンククリック率',
                 color: 'text-amber-600',
                 bg: 'bg-amber-50',
@@ -262,7 +262,7 @@ export default function DeliveryAnalyticsPage() {
               },
               {
                 label: '配信失敗率',
-                value: formatPercent(data.kpi.failureRate),
+                value: formatPercent(data.kpi?.failureRate ?? 0),
                 sub: 'エラー発生率',
                 color: 'text-red-600',
                 bg: 'bg-red-50',
@@ -311,7 +311,7 @@ export default function DeliveryAnalyticsPage() {
               配信トレンド
             </h2>
 
-            {data.trend.length === 0 ? (
+            {!data.trend?.length ? (
               <p className="text-sm text-slate-400 py-8 text-center">
                 データがありません
               </p>
@@ -398,7 +398,7 @@ export default function DeliveryAnalyticsPage() {
               配信タイプ別内訳
             </h2>
 
-            {data.typeBreakdown.length === 0 ? (
+            {!data.typeBreakdown?.length ? (
               <p className="text-sm text-slate-400 py-8 text-center">
                 データがありません
               </p>
@@ -464,7 +464,7 @@ export default function DeliveryAnalyticsPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.recentDeliveries.length === 0 ? (
+                {!data.recentDeliveries?.length ? (
                   <tr>
                     <td
                       colSpan={5}
@@ -474,7 +474,7 @@ export default function DeliveryAnalyticsPage() {
                     </td>
                   </tr>
                 ) : (
-                  data.recentDeliveries.map((d, i) => {
+                  (data.recentDeliveries ?? []).map((d, i) => {
                     const st = STATUS_LABELS[d.status] || {
                       label: d.status,
                       cls: 'bg-slate-100 text-slate-600',

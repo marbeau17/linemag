@@ -54,6 +54,16 @@ function BackArrow() {
   );
 }
 
+// ─── Safe JSON parser ─────────────────────────────────────────────────────────
+
+async function safeJsonParse(res: Response): Promise<Record<string, unknown>> {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -106,9 +116,9 @@ export default function DashboardPage() {
     setMsg(null);
     try {
       const r = await fetch('/api/line/scrape-list', { method: 'POST' });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      const articles: ArticleListItem[] = d.articles || [];
+      const d = await safeJsonParse(r);
+      if (!r.ok) throw new Error((d.error as string) || '記事一覧の取得に失敗しました');
+      const articles = (d.articles || []) as ArticleListItem[];
       setArticleList(articles);
       setDetailLoaded({});
       setDetailLoading({});
@@ -141,15 +151,15 @@ export default function DashboardPage() {
           category: item.category,
         }),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
+      const d = await safeJsonParse(r);
+      if (!r.ok) throw new Error((d.error as string) || '記事詳細の取得に失敗しました');
       const detail: ArticleDetail = {
-        url: d.url,
-        title: d.title,
-        catchyTitle: d.catchyTitle,
-        summaryText: d.summaryText,
-        thumbnailUrl: d.thumbnailUrl,
-        category: d.category,
+        url: (d.url as string) || item.url,
+        title: (d.title as string) || item.title,
+        catchyTitle: (d.catchyTitle as string) || '',
+        summaryText: (d.summaryText as string) || '',
+        thumbnailUrl: (d.thumbnailUrl as string | null) ?? item.thumbnailUrl,
+        category: (d.category as string | null) ?? item.category,
       };
       setDetailLoaded((prev) => ({ ...prev, [item.url]: detail }));
     } catch (e) {
@@ -194,8 +204,8 @@ export default function DashboardPage() {
           articleCategory: detail.category,
         }),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
+      const d = await safeJsonParse(r);
+      if (!r.ok) throw new Error((d.error as string) || '配信に失敗しました');
       setMsg({ ok: true, text: 'LINE配信が完了しました！' });
       setStep('fetch');
       setArticleList([]);
@@ -232,8 +242,8 @@ export default function DashboardPage() {
           articleCategory: detail.category,
         }),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
+      const d = await safeJsonParse(r);
+      if (!r.ok) throw new Error((d.error as string) || 'テスト配信に失敗しました');
       setMsg({ ok: true, text: 'テスト配信が完了しました。LINEアプリで確認してください。' });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : 'テスト配信に失敗しました' });
@@ -266,8 +276,8 @@ export default function DashboardPage() {
           articleCategory: detail.category,
         }),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
+      const d = await safeJsonParse(r);
+      if (!r.ok) throw new Error((d.error as string) || '個別配信に失敗しました');
       setMsg({ ok: true, text: `個別配信が完了しました（User ID: ${pushUserId.trim()}）` });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : '個別配信に失敗しました' });
@@ -283,9 +293,9 @@ export default function DashboardPage() {
     setMsg(null);
     try {
       const r = await fetch('/api/line/followers');
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      setFollowers(d.followers || []);
+      const d = await safeJsonParse(r);
+      if (!r.ok) throw new Error((d.error as string) || 'フォロワー取得に失敗しました');
+      setFollowers((d.followers || []) as LineFollower[]);
       setFollowersLoaded(true);
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : 'フォロワー取得に失敗しました' });

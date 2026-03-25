@@ -120,14 +120,17 @@ export default function CouponAnalyticsPage() {
   const [to, setTo] = useState(defaultTo);
   const [data, setData] = useState<CouponsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`/api/analytics/charts?type=coupons&from=${from}&to=${to}`);
-      if (res.ok) setData(await res.json());
-    } catch {
-      // silent
+      if (!res.ok) throw new Error('クーポン分析データの取得に失敗しました');
+      setData(await res.json());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'エラーが発生しました');
     } finally {
       setLoading(false);
     }
@@ -168,6 +171,13 @@ export default function CouponAnalyticsPage() {
         </div>
       </div>
 
+      {/* ── Error ──────────────────────────────────────────────────── */}
+      {error && (
+        <div className="px-4 py-3 rounded-lg text-sm bg-red-50 text-red-700 border border-red-200">
+          {error}
+        </div>
+      )}
+
       {loading ? (
         <Spinner />
       ) : (
@@ -176,19 +186,19 @@ export default function CouponAnalyticsPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard
               label="発行数"
-              value={formatNumber(data?.kpi.total_issued ?? 0)}
+              value={formatNumber(data?.kpi?.total_issued ?? 0)}
             />
             <KpiCard
               label="利用数"
-              value={formatNumber(data?.kpi.total_used ?? 0)}
+              value={formatNumber(data?.kpi?.total_used ?? 0)}
             />
             <KpiCard
               label="利用率"
-              value={formatPercent(data?.kpi.usage_rate ?? 0)}
+              value={formatPercent(data?.kpi?.usage_rate ?? 0)}
             />
             <KpiCard
               label="平均割引額"
-              value={formatYen(data?.kpi.avg_discount ?? 0)}
+              value={formatYen(data?.kpi?.avg_discount ?? 0)}
             />
           </div>
 

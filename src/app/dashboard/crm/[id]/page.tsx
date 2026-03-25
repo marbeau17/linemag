@@ -161,8 +161,10 @@ export default function CrmCustomerDetailPage() {
         fetchActions(),
       ]);
       setCustomer(cust);
-      setTags((tagData.tags ?? tagData).map((t: Tag | string) => (typeof t === 'string' ? t : t.tag)));
-      setActions(actionData.actions ?? actionData);
+      const rawTags = tagData.tags ?? tagData ?? [];
+      setTags(Array.isArray(rawTags) ? rawTags.map((t: Tag | string) => (typeof t === 'string' ? t : t.tag)) : []);
+      const rawActions = actionData.actions ?? actionData ?? [];
+      setActions(Array.isArray(rawActions) ? rawActions : []);
       setEditForm({
         email: cust.email ?? '',
         phone: cust.phone ?? '',

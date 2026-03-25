@@ -251,7 +251,7 @@ export default function ReportsPage() {
 
           {/* Summary stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {Object.entries(report.summary).map(([key, value]) => (
+            {Object.entries(report.summary ?? {}).map(([key, value]) => (
               <div key={key} className="bg-gray-50 rounded-lg p-4 text-center">
                 <p className="text-xs text-gray-500 mb-1">{key}</p>
                 <p className="text-xl font-bold text-gray-900">{typeof value === 'number' ? value.toLocaleString() : value}</p>
@@ -260,12 +260,12 @@ export default function ReportsPage() {
           </div>
 
           {/* Data table */}
-          {report.columns.length > 0 && report.rows.length > 0 && (
+          {(report.columns?.length ?? 0) > 0 && (report.rows?.length ?? 0) > 0 && (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead className="bg-gray-50">
                   <tr>
-                    {report.columns.map((col) => (
+                    {(report.columns ?? []).map((col) => (
                       <th key={col} className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap">
                         {col}
                       </th>
@@ -273,9 +273,9 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {report.rows.slice(0, 20).map((row, i) => (
+                  {(report.rows ?? []).slice(0, 20).map((row, i) => (
                     <tr key={i} className="hover:bg-gray-50">
-                      {report.columns.map((col) => (
+                      {(report.columns ?? []).map((col) => (
                         <td key={col} className="px-4 py-2.5 text-gray-700 whitespace-nowrap">
                           {row[col] ?? '-'}
                         </td>
@@ -284,9 +284,9 @@ export default function ReportsPage() {
                   ))}
                 </tbody>
               </table>
-              {report.rows.length > 20 && (
+              {(report.rows?.length ?? 0) > 20 && (
                 <p className="text-xs text-gray-500 mt-2 text-right">
-                  先頭20件を表示中（全{report.rows.length.toLocaleString()}件）
+                  先頭20件を表示中（全{(report.rows?.length ?? 0).toLocaleString()}件）
                 </p>
               )}
             </div>

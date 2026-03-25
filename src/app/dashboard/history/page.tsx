@@ -21,9 +21,18 @@ export default function HistoryPage() {
     setError(null);
     try {
       const res = await fetch('/api/line/history?limit=50');
-      if (!res.ok) throw new Error('履歴の取得に失敗しました');
+      if (!res.ok) {
+        let errorMsg = '履歴の取得に失敗しました';
+        try {
+          const errData = await res.json();
+          if (errData?.error) errorMsg = errData.error;
+        } catch {
+          // Response was not JSON; use default message
+        }
+        throw new Error(errorMsg);
+      }
       const data = await res.json();
-      setRecords(data.history || []);
+      setRecords(Array.isArray(data?.history) ? data.history : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました');
     } finally {

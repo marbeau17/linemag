@@ -97,7 +97,7 @@ export default function LiffCouponsPage() {
   };
 
   const isExpired = (coupon: CouponIssue) => {
-    return coupon.status === 'expired' || new Date(coupon.expiresAt) < new Date();
+    return coupon.status === 'expired' || (coupon.expiresAt ? new Date(coupon.expiresAt) < new Date() : false);
   };
 
   const isUsedOrExpired = (coupon: CouponIssue) => {
@@ -168,9 +168,17 @@ export default function LiffCouponsPage() {
         )}
 
         {/* Error */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
-            {error}
+        {error && !loading && (
+          <div className="flex flex-col items-center py-12">
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600 w-full mb-4">
+              {error}
+            </div>
+            <button
+              onClick={fetchCoupons}
+              className="text-sm text-[#06C755] font-semibold active:opacity-70 transition"
+            >
+              再読み込み
+            </button>
           </div>
         )}
 
@@ -286,7 +294,8 @@ export default function LiffCouponsPage() {
 
                   {/* Coupon code (copyable) */}
                   <button
-                    onClick={() => handleCopy(coupon.issueCode)}
+                    onClick={() => coupon.issueCode && handleCopy(coupon.issueCode)}
+                    disabled={!coupon.issueCode}
                     className={`mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition-colors ${
                       inactive
                         ? 'bg-slate-100 text-slate-400'
@@ -318,7 +327,7 @@ export default function LiffCouponsPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <span>
-                      有効期限: {formatDate(coupon.expiresAt)}
+                      有効期限: {coupon.expiresAt ? formatDate(coupon.expiresAt) : '-'}
                       {!inactive && expired && (
                         <span className="ml-1 text-orange-500 font-medium">（期限切れ）</span>
                       )}
@@ -328,7 +337,7 @@ export default function LiffCouponsPage() {
                   {/* Used date */}
                   {coupon.usedAt && (
                     <div className="mt-1 text-[11px] text-slate-400">
-                      使用日: {formatDate(coupon.usedAt)}
+                      使用日: {coupon.usedAt ? formatDate(coupon.usedAt) : '-'}
                     </div>
                   )}
                 </div>

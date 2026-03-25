@@ -272,13 +272,13 @@ export default function BookingAnalyticsPage() {
       ? `${((statusBreakdown.no_show / totalBookings) * 100).toFixed(1)}%`
       : '-';
 
-  const chartMax = Math.max(...chartData.map((p) => p.total), 1);
+  const chartMax = chartData.length > 0 ? Math.max(...chartData.map((p) => p.total), 1) : 1;
   const statusTotal =
     statusBreakdown.confirmed +
     statusBreakdown.completed +
     statusBreakdown.cancelled +
     statusBreakdown.no_show;
-  const peakMax = Math.max(...peakHours.map((c) => c.count), 1);
+  const peakMax = peakHours.length > 0 ? Math.max(...peakHours.map((c) => c.count), 1) : 1;
 
   const DAY_LABELS = ['月', '火', '水', '木', '金'];
   const HOURS = Array.from({ length: 10 }, (_, i) => 9 + i);
@@ -354,7 +354,7 @@ export default function BookingAnalyticsPage() {
             <KpiCard
               label="予約数"
               value={totalBookings}
-              sub={stats ? `本日: ${stats.totalToday} / 今週: ${stats.totalThisWeek}` : `期間: ${formatDateShort(dateFrom)} - ${formatDateShort(dateTo)}`}
+              sub={stats ? `本日: ${stats.totalToday ?? 0} / 今週: ${stats.totalThisWeek ?? 0}` : `期間: ${formatDateShort(dateFrom)} - ${formatDateShort(dateTo)}`}
               color="green"
             />
             <KpiCard
@@ -382,6 +382,9 @@ export default function BookingAnalyticsPage() {
             <h2 className="text-sm font-bold text-slate-700 mb-4">
               予約トレンド
             </h2>
+            {chartData.length === 0 ? (
+              <p className="text-sm text-slate-400 py-8 text-center">データがありません</p>
+            ) : (
             <div className="flex items-end gap-1 overflow-x-auto pb-2">
               {chartData.map((point) => {
                 const totalH = (point.total / chartMax) * 160;
@@ -422,6 +425,7 @@ export default function BookingAnalyticsPage() {
                 );
               })}
             </div>
+            )}
             {/* Legend */}
             <div className="flex items-center gap-4 mt-4 text-xs text-slate-500">
               <span className="flex items-center gap-1">
@@ -524,7 +528,13 @@ export default function BookingAnalyticsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {consultants.map((c) => {
+                  {consultants.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">
+                        担当者データがありません
+                      </td>
+                    </tr>
+                  ) : consultants.map((c) => {
                     const completionPct =
                       c.total > 0
                         ? Math.round((c.completed / c.total) * 100)
@@ -569,7 +579,8 @@ export default function BookingAnalyticsPage() {
                         </td>
                       </tr>
                     );
-                  })}
+                  })
+                  }
                 </tbody>
               </table>
             </div>

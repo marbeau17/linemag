@@ -11,32 +11,48 @@ export async function middleware(request: NextRequest) {
     request: { headers: request.headers },
   });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
-          );
-          response = NextResponse.next({
-            request: { headers: request.headers },
-          });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-        },
+  // ---- env-var guard -------------------------------------------------------
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    // Cannot authenticate — let the request through so the app can render its
+    // own error / setup page rather than crashing in middleware.
+    console.error('[middleware] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
+    return response;
+  }
+
+  // ---- Supabase client -----------------------------------------------------
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) =>
+          request.cookies.set(name, value),
+        );
+        response = NextResponse.next({
+          request: { headers: request.headers },
+        });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          response.cookies.set(name, value, options),
+        );
       },
     },
-  );
+  });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // ---- Fetch user (fail-open on error) -------------------------------------
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch (err) {
+    // Network or Supabase outage — allow the request through instead of
+    // crashing. Protected pages will still fail gracefully on their own.
+    console.error('[middleware] supabase.auth.getUser() failed:', err);
+    return response;
+  }
 
   const { pathname } = request.nextUrl;
 
@@ -88,6 +104,17 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
+// NOTE: /api/cron/* is intentionally excluded — cron endpoints use their own
+// auth (e.g. CRON_SECRET header) and must not go through session middleware.
 export const config = {
-  matcher: ['/dashboard/:path*', '/login', '/api/line/:path*', '/api/crm/:path*', '/api/coupons/:path*', '/api/booking/:path*', '/api/ma/:path*', '/api/analytics/:path*'],
+  matcher: [
+    '/dashboard/:path*',
+    '/login',
+    '/api/line/:path*',
+    '/api/crm/:path*',
+    '/api/coupons/:path*',
+    '/api/booking/:path*',
+    '/api/ma/:path*',
+    '/api/analytics/:path*',
+  ],
 };

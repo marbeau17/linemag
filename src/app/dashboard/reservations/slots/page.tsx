@@ -82,14 +82,20 @@ export default function SlotsSettingsPage() {
   /* ─── fetch on mount ─── */
   const fetchSettings = useCallback(() => {
     fetch('/api/booking/settings')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) return null;
+        return r.json();
+      })
       .then((d) => { if (d && d.businessHours) setSettings(d); })
       .catch(() => {});
   }, []);
 
   const fetchConsultants = useCallback(() => {
     fetch('/api/booking/consultants')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) return null;
+        return r.json();
+      })
       .then((d) => { if (Array.isArray(d)) setConsultants(d); })
       .catch(() => {});
   }, []);
@@ -135,11 +141,13 @@ export default function SlotsSettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error ?? '保存に失敗しました');
-      setSettingsMsg('設定を保存しました');
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d?.error ?? '保存に失敗しました');
+      }
+      setSettingsMsg('OK:設定を保存しました');
     } catch (e) {
-      setSettingsMsg(e instanceof Error ? e.message : 'エラーが発生しました');
+      setSettingsMsg('ERR:' + (e instanceof Error ? e.message : 'エラーが発生しました'));
     } finally {
       setSavingSettings(false);
     }
@@ -176,13 +184,15 @@ export default function SlotsSettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error ?? '保存に失敗しました');
-      setConsultantMsg(editingId ? '相談員を更新しました' : '相談員を追加しました');
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d?.error ?? '保存に失敗しました');
+      }
+      setConsultantMsg('OK:' + (editingId ? '相談員を更新しました' : '相談員を追加しました'));
       resetConsultantForm();
       fetchConsultants();
     } catch (e) {
-      setConsultantMsg(e instanceof Error ? e.message : 'エラーが発生しました');
+      setConsultantMsg('ERR:' + (e instanceof Error ? e.message : 'エラーが発生しました'));
     } finally {
       setSavingConsultant(false);
     }
@@ -192,11 +202,14 @@ export default function SlotsSettingsPage() {
     if (!confirm('この相談員を削除しますか？')) return;
     try {
       const r = await fetch(`/api/booking/consultants/${id}`, { method: 'DELETE' });
-      if (!r.ok) { const d = await r.json(); throw new Error(d.error); }
-      setConsultantMsg('相談員を削除しました');
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d?.error ?? '削除に失敗しました');
+      }
+      setConsultantMsg('OK:相談員を削除しました');
       fetchConsultants();
     } catch (e) {
-      setConsultantMsg(e instanceof Error ? e.message : 'エラーが発生しました');
+      setConsultantMsg('ERR:' + (e instanceof Error ? e.message : 'エラーが発生しました'));
     }
   };
 
@@ -215,11 +228,14 @@ export default function SlotsSettingsPage() {
           duration: genDuration,
         }),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error ?? '生成に失敗しました');
-      setGenMsg(`${d.count ?? 0}件のスロットを生成しました`);
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d?.error ?? '生成に失敗しました');
+      }
+      const d = await r.json().catch(() => ({}));
+      setGenMsg(`OK:${d?.count ?? 0}件のスロットを生成しました`);
     } catch (e) {
-      setGenMsg(e instanceof Error ? e.message : 'エラーが発生しました');
+      setGenMsg('ERR:' + (e instanceof Error ? e.message : 'エラーが発生しました'));
     } finally {
       setGenerating(false);
     }
@@ -345,8 +361,8 @@ export default function SlotsSettingsPage() {
 
           {/* save */}
           {settingsMsg && (
-            <div className={`px-4 py-3 rounded-lg text-sm ${settingsMsg.includes('保存') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-              {settingsMsg}
+            <div className={`px-4 py-3 rounded-lg text-sm ${settingsMsg.startsWith('OK:') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+              {settingsMsg.replace(/^(OK:|ERR:)/, '')}
             </div>
           )}
           <button onClick={saveSettings} disabled={savingSettings} className={`${btnPrimary} w-full`}>
@@ -467,8 +483,8 @@ export default function SlotsSettingsPage() {
           </div>
 
           {consultantMsg && (
-            <div className={`px-4 py-3 rounded-lg text-sm ${consultantMsg.includes('削除') || consultantMsg.includes('エラー') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
-              {consultantMsg}
+            <div className={`px-4 py-3 rounded-lg text-sm ${consultantMsg.startsWith('OK:') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+              {consultantMsg.replace(/^(OK:|ERR:)/, '')}
             </div>
           )}
         </div>
@@ -544,8 +560,8 @@ export default function SlotsSettingsPage() {
 
           {/* generate */}
           {genMsg && (
-            <div className={`px-4 py-3 rounded-lg text-sm ${genMsg.includes('生成しました') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-              {genMsg}
+            <div className={`px-4 py-3 rounded-lg text-sm ${genMsg.startsWith('OK:') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+              {genMsg.replace(/^(OK:|ERR:)/, '')}
             </div>
           )}
           <button

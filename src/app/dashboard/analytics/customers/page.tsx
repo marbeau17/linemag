@@ -128,21 +128,41 @@ export default function CustomerAnalyticsPage() {
   const [tiers, setTiers] = useState<TiersData | null>(null);
   const [funnel, setFunnel] = useState<FunnelData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Fetch customers + tiers + funnel
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const [custRes, tierRes, funnelRes] = await Promise.all([
         fetch(`/api/analytics/charts?type=customers&from=${from}&to=${to}`),
         fetch(`/api/analytics/charts?type=tiers`),
         fetch(`/api/analytics/charts?type=funnel`),
       ]);
-      if (custRes.ok) setData(await custRes.json());
-      if (tierRes.ok) setTiers(await tierRes.json());
-      if (funnelRes.ok) setFunnel(await funnelRes.json());
-    } catch {
-      // silent
+
+      const errors: string[] = [];
+      if (custRes.ok) {
+        setData(await custRes.json());
+      } else {
+        errors.push('顧客データ');
+      }
+      if (tierRes.ok) {
+        setTiers(await tierRes.json());
+      } else {
+        errors.push('ティアデータ');
+      }
+      if (funnelRes.ok) {
+        setFunnel(await funnelRes.json());
+      } else {
+        errors.push('ファネルデータ');
+      }
+
+      if (errors.length > 0) {
+        setError(`${errors.join('、')}の取得に失敗しました`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '顧客分析データの取得に失敗しました');
     } finally {
       setLoading(false);
     }
@@ -191,6 +211,13 @@ export default function CustomerAnalyticsPage() {
         </div>
       </div>
 
+      {/* ── Error ──────────────────────────────────────────────────── */}
+      {error && (
+        <div className="px-4 py-3 rounded-lg text-sm bg-red-50 text-red-700 border border-red-200">
+          {error}
+        </div>
+      )}
+
       {loading ? (
         <Spinner />
       ) : (
@@ -199,20 +226,20 @@ export default function CustomerAnalyticsPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard
               label="総顧客数"
-              value={formatNumber(data?.kpi.total_customers ?? 0)}
+              value={formatNumber(data?.kpi?.total_customers ?? 0)}
             />
             <KpiCard
               label="新規顧客"
-              value={formatNumber(data?.kpi.new_customers ?? 0)}
+              value={formatNumber(data?.kpi?.new_customers ?? 0)}
               sub={`${from} 〜 ${to}`}
             />
             <KpiCard
               label="アクティブ顧客"
-              value={formatNumber(data?.kpi.active_customers ?? 0)}
+              value={formatNumber(data?.kpi?.active_customers ?? 0)}
             />
             <KpiCard
               label="離脱率"
-              value={formatPercent(data?.kpi.churn_rate ?? 0)}
+              value={formatPercent(data?.kpi?.churn_rate ?? 0)}
             />
           </div>
 

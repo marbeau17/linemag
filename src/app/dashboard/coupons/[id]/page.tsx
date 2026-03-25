@@ -114,7 +114,8 @@ function IssueModal({
       const res = await fetch(`/api/crm/customers?search=${encodeURIComponent(q)}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
-      setCustomers(data.customers ?? data);
+      const list = data.customers ?? data;
+      setCustomers(Array.isArray(list) ? list : []);
     } catch {
       setCustomers([]);
     } finally {
@@ -292,6 +293,7 @@ export default function CouponDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
 
   /* ── fetch ── */
@@ -315,7 +317,8 @@ export default function CouponDetailPage() {
       const [masterData, issuedData] = await Promise.all([fetchMaster(), fetchIssued()]);
       setCoupon(masterData.coupon ?? masterData);
       setStats(masterData.stats ?? null);
-      setIssued(issuedData.issued ?? issuedData);
+      const issuedList = issuedData.issued ?? issuedData;
+      setIssued(Array.isArray(issuedList) ? issuedList : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました');
     } finally {
@@ -332,17 +335,21 @@ export default function CouponDetailPage() {
   async function handleToggleActive() {
     if (!coupon) return;
     setToggling(true);
+    setToggleError(null);
     try {
       const res = await fetch(`/api/coupons/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: !coupon.is_active }),
       });
-      if (!res.ok) throw new Error('更新に失敗しました');
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? 'ステータスの更新に失敗しました');
+      }
       const updated = await res.json();
       setCoupon(updated.coupon ?? updated);
-    } catch {
-      // silently fail
+    } catch (e) {
+      setToggleError(e instanceof Error ? e.message : 'ステータスの更新に失敗しました');
     } finally {
       setToggling(false);
     }
@@ -425,6 +432,13 @@ export default function CouponDetailPage() {
           )}
         </p>
       </div>
+
+      {/* Toggle error */}
+      {toggleError && (
+        <div className="px-4 py-3 rounded-lg text-sm bg-red-50 text-red-700 border border-red-200">
+          {toggleError}
+        </div>
+      )}
 
       {/* ─── Two-column: Info + Stats ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
