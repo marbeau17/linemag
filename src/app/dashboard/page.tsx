@@ -1,972 +1,526 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import ArticleCard from '@/components/line/ArticleCard';
-import TemplateSelector from '@/components/line/TemplateSelector';
-import FlexPreview from '@/components/line/FlexPreview';
-import { TEMPLATE_DEFINITIONS } from '@/lib/line/templates';
-import type { TemplateId } from '@/types/line';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
-// ─── Interfaces ──────────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────────────────
 
-interface ArticleListItem {
-  url: string;
-  title: string;
-  thumbnailUrl: string | null;
-  category: string | null;
+interface KpiData {
+  friends: number | null;
+  activeScenarios: number | null;
+  broadcasts: number | null;
+  coupons: number | null;
+  reservations: number | null;
+  segments: number | null;
 }
 
-interface ArticleDetail {
-  url: string;
-  title: string;
-  catchyTitle: string;
-  summaryText: string;
-  thumbnailUrl: string | null;
-  category: string | null;
+interface HistoryItem {
+  id?: string;
+  sentAt?: string;
+  createdAt?: string;
+  title?: string;
+  templateId?: string;
+  status?: string;
+  recipientCount?: number;
 }
 
-interface LineFollower {
-  userId: string;
-  displayName: string;
-  pictureUrl?: string;
-}
+// ─── Icons ──────────────────────────────────────────────────────────────────
 
-type Step = 'fetch' | 'select' | 'template' | 'confirm';
-
-// ─── Spinner SVG (reused) ────────────────────────────────────────────────────
-
-function Spinner({ className = 'w-4 h-4' }: { className?: string }) {
+function UsersIcon({ className = 'w-5 h-5' }: { className?: string }) {
   return (
-    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-1.997M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
     </svg>
   );
 }
 
-// ─── Back Arrow Icon (reused) ────────────────────────────────────────────────
-
-function BackArrow() {
+function BoltIcon({ className = 'w-5 h-5' }: { className?: string }) {
   return (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
     </svg>
   );
 }
 
-// ─── Safe JSON parser ─────────────────────────────────────────────────────────
+function MegaphoneIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 01-1.44-4.282m3.102.069a18.03 18.03 0 01-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 018.835 2.535M10.34 6.66a23.847 23.847 0 008.835-2.535m0 0A23.74 23.74 0 0018.795 3m.38 1.125a23.91 23.91 0 011.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 001.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 010 3.46" />
+    </svg>
+  );
+}
 
-async function safeJsonParse(res: Response): Promise<Record<string, unknown>> {
+function TicketIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 010 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a2.999 2.999 0 010-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375z" />
+    </svg>
+  );
+}
+
+function CalendarIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+    </svg>
+  );
+}
+
+function TagIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
+    </svg>
+  );
+}
+
+function ChartBarIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
+function ClockIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
+// ─── Skeleton Loader ────────────────────────────────────────────────────────
+
+function KpiSkeleton() {
+  return (
+    <div className="rounded-2xl p-5 bg-slate-100 animate-pulse h-[164px]">
+      <div className="flex items-center justify-between mb-6">
+        <div className="w-10 h-10 rounded-xl bg-slate-200" />
+        <div className="w-5 h-5 rounded bg-slate-200" />
+      </div>
+      <div className="h-10 w-20 bg-slate-200 rounded mb-2" />
+      <div className="h-4 w-24 bg-slate-200 rounded mb-1" />
+      <div className="h-3 w-32 bg-slate-200 rounded" />
+    </div>
+  );
+}
+
+// ─── KPI Card Config ────────────────────────────────────────────────────────
+
+interface KpiCardConfig {
+  key: keyof KpiData;
+  label: string;
+  description: string;
+  link: string;
+  gradient: string;
+  icon: React.ReactNode;
+}
+
+const kpiCards: KpiCardConfig[] = [
+  {
+    key: 'friends',
+    label: '友だち数',
+    description: 'LINE友だち登録数',
+    link: '/dashboard/crm',
+    gradient: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+    icon: <UsersIcon className="w-5 h-5 text-white" />,
+  },
+  {
+    key: 'activeScenarios',
+    label: 'アクティブシナリオ',
+    description: '実行中の自動配信',
+    link: '/dashboard/ma',
+    gradient: 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%)',
+    icon: <BoltIcon className="w-5 h-5 text-white" />,
+  },
+  {
+    key: 'broadcasts',
+    label: '配信数',
+    description: '一斉配信の実績',
+    link: '/dashboard/history',
+    gradient: 'linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)',
+    icon: <MegaphoneIcon className="w-5 h-5 text-white" />,
+  },
+  {
+    key: 'coupons',
+    label: 'クーポン',
+    description: '登録済みクーポン数',
+    link: '/dashboard/coupons',
+    gradient: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
+    icon: <TicketIcon className="w-5 h-5 text-white" />,
+  },
+  {
+    key: 'reservations',
+    label: '予約数',
+    description: '今月の予約件数',
+    link: '/dashboard/reservations',
+    gradient: 'linear-gradient(135deg, #fb7185 0%, #e11d48 100%)',
+    icon: <CalendarIcon className="w-5 h-5 text-white" />,
+  },
+  {
+    key: 'segments',
+    label: 'セグメント',
+    description: '顧客セグメント数',
+    link: '/dashboard/crm/segments',
+    gradient: 'linear-gradient(135deg, #2dd4bf 0%, #14b8a6 100%)',
+    icon: <TagIcon className="w-5 h-5 text-white" />,
+  },
+];
+
+// ─── Quick Action Config ────────────────────────────────────────────────────
+
+interface QuickActionConfig {
+  label: string;
+  description: string;
+  href: string;
+  iconBg: string;
+  icon: React.ReactNode;
+}
+
+const quickActions: QuickActionConfig[] = [
+  {
+    label: '友だち管理',
+    description: '友だちの一覧・タグ管理',
+    href: '/dashboard/crm',
+    iconBg: 'bg-green-50',
+    icon: <UsersIcon className="w-5 h-5 text-green-600" />,
+  },
+  {
+    label: 'シナリオ配信',
+    description: '自動配信シナリオの作成',
+    href: '/dashboard/ma',
+    iconBg: 'bg-blue-50',
+    icon: <BoltIcon className="w-5 h-5 text-blue-600" />,
+  },
+  {
+    label: '一斉配信',
+    description: '記事を選んで一斉配信',
+    href: '/dashboard/broadcast',
+    iconBg: 'bg-purple-50',
+    icon: <MegaphoneIcon className="w-5 h-5 text-purple-600" />,
+  },
+  {
+    label: 'クーポン管理',
+    description: 'クーポンの作成・配布',
+    href: '/dashboard/coupons',
+    iconBg: 'bg-amber-50',
+    icon: <TicketIcon className="w-5 h-5 text-amber-600" />,
+  },
+  {
+    label: '予約管理',
+    description: '相談予約の管理',
+    href: '/dashboard/reservations',
+    iconBg: 'bg-rose-50',
+    icon: <CalendarIcon className="w-5 h-5 text-rose-600" />,
+  },
+  {
+    label: '分析レポート',
+    description: 'KPI分析・レポート',
+    href: '/dashboard/analytics',
+    iconBg: 'bg-teal-50',
+    icon: <ChartBarIcon className="w-5 h-5 text-teal-600" />,
+  },
+];
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function formatCount(value: number | null): string {
+  if (value === null) return '-';
+  return value.toLocaleString();
+}
+
+function formatTime(dateStr: string): string {
   try {
-    return await res.json();
+    const d = new Date(dateStr);
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+    const hours = d.getHours().toString().padStart(2, '0');
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    return `${month}/${day} ${hours}:${minutes}`;
   } catch {
-    return {};
+    return '-';
   }
 }
 
-// ─── Main Page ───────────────────────────────────────────────────────────────
+function statusBadge(status?: string) {
+  switch (status) {
+    case 'sent':
+    case 'success':
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+          送信済み
+        </span>
+      );
+    case 'failed':
+    case 'error':
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+          失敗
+        </span>
+      );
+    case 'pending':
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+          送信中
+        </span>
+      );
+    default:
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+          {status || '不明'}
+        </span>
+      );
+  }
+}
+
+// ─── Main Page ──────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  // Steps
-  const [step, setStep] = useState<Step>('fetch');
+  const [kpi, setKpi] = useState<KpiData>({
+    friends: null,
+    activeScenarios: null,
+    broadcasts: null,
+    coupons: null,
+    reservations: null,
+    segments: null,
+  });
+  const [loading, setLoading] = useState(true);
+  const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
-  // Article list (lightweight, from scrape-list)
-  const [articleList, setArticleList] = useState<ArticleListItem[]>([]);
+  useEffect(() => {
+    async function fetchKpis() {
+      try {
+        const [
+          friendsRes,
+          scenariosRes,
+          historyRes,
+          couponsRes,
+          reservationsRes,
+          segmentsRes,
+        ] = await Promise.allSettled([
+          fetch('/api/crm/customers/count'),
+          fetch('/api/ma/scenarios'),
+          fetch('/api/line/history'),
+          fetch('/api/coupons'),
+          fetch('/api/booking/reservations/stats'),
+          fetch('/api/crm/segments'),
+        ]);
 
-  // Detail cache: url -> ArticleDetail
-  const [detailLoaded, setDetailLoaded] = useState<Record<string, ArticleDetail>>({});
+        const data: KpiData = {
+          friends: null,
+          activeScenarios: null,
+          broadcasts: null,
+          coupons: null,
+          reservations: null,
+          segments: null,
+        };
 
-  // Which articles are currently loading detail
-  const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({});
+        // Friends count
+        if (friendsRes.status === 'fulfilled' && friendsRes.value.ok) {
+          const json = await friendsRes.value.json();
+          data.friends = json.count ?? 0;
+        }
 
-  // Selection
-  const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
+        // Active scenarios count
+        if (scenariosRes.status === 'fulfilled' && scenariosRes.value.ok) {
+          const json = await scenariosRes.value.json();
+          const scenarios = json.scenarios ?? [];
+          data.activeScenarios = scenarios.filter(
+            (s: { status?: string }) => s.status === 'active'
+          ).length;
+        }
 
-  // Template
-  const [templateId, setTemplateId] = useState<TemplateId>('daily-column');
+        // Broadcasts count
+        if (historyRes.status === 'fulfilled' && historyRes.value.ok) {
+          const json = await historyRes.value.json();
+          const history = json.history ?? [];
+          data.broadcasts = history.length;
+        }
 
-  // UI state
-  const [listLoading, setListLoading] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [testSending, setTestSending] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+        // Coupons count
+        if (couponsRes.status === 'fulfilled' && couponsRes.value.ok) {
+          const json = await couponsRes.value.json();
+          // API returns array directly or { masters: [...] }
+          const list = Array.isArray(json) ? json : json.masters ?? [];
+          data.coupons = list.length;
+        }
 
-  // Pagination
-  const [page, setPage] = useState(0);
-  const PAGE_SIZE = 10;
+        // Reservations count (this month)
+        if (reservationsRes.status === 'fulfilled' && reservationsRes.value.ok) {
+          const json = await reservationsRes.value.json();
+          data.reservations = json.totalThisMonth ?? 0;
+        }
 
-  // Category filter
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+        // Segments count
+        if (segmentsRes.status === 'fulfilled' && segmentsRes.value.ok) {
+          const json = await segmentsRes.value.json();
+          const segments = json.segments ?? [];
+          data.segments = segments.length;
+        }
 
-  // Delivery mode
-  const [deliveryMode, setDeliveryMode] = useState<'broadcast' | 'push'>('broadcast');
-  const [pushUserId, setPushUserId] = useState('');
-  const [pushSending, setPushSending] = useState(false);
-
-  // Follower list
-  const [followers, setFollowers] = useState<LineFollower[]>([]);
-  const [followersLoading, setFollowersLoading] = useState(false);
-  const [followersLoaded, setFollowersLoaded] = useState(false);
-  const [followerSearch, setFollowerSearch] = useState('');
-
-  // ── Step 1: Fetch article list (fast) ──────────────────────────────────────
-
-  const fetchArticleList = useCallback(async () => {
-    setListLoading(true);
-    setMsg(null);
-    try {
-      const r = await fetch('/api/line/scrape-list', { method: 'POST' });
-      const d = await safeJsonParse(r);
-      if (!r.ok) throw new Error((d.error as string) || '記事一覧の取得に失敗しました');
-      const articles = (d.articles || []) as ArticleListItem[];
-      setArticleList(articles);
-      setDetailLoaded({});
-      setDetailLoading({});
-      setSelectedUrl(null);
-      setPage(0);
-      setCategoryFilter('all');
-      setStep('select');
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : '記事一覧の取得に失敗しました' });
-    } finally {
-      setListLoading(false);
-    }
-  }, []);
-
-  // ── Step 2: Fetch detail for a single article ─────────────────────────────
-
-  const fetchDetail = useCallback(async (item: ArticleListItem) => {
-    // Already loaded or loading
-    if (detailLoaded[item.url] || detailLoading[item.url]) return;
-
-    setDetailLoading((prev) => ({ ...prev, [item.url]: true }));
-    try {
-      const r = await fetch('/api/line/scrape-detail', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: item.url,
-          title: item.title,
-          thumbnailUrl: item.thumbnailUrl,
-          category: item.category,
-        }),
-      });
-      const d = await safeJsonParse(r);
-      if (!r.ok) throw new Error((d.error as string) || '記事詳細の取得に失敗しました');
-      const detail: ArticleDetail = {
-        url: (d.url as string) || item.url,
-        title: (d.title as string) || item.title,
-        catchyTitle: (d.catchyTitle as string) || '',
-        summaryText: (d.summaryText as string) || '',
-        thumbnailUrl: (d.thumbnailUrl as string | null) ?? item.thumbnailUrl,
-        category: (d.category as string | null) ?? item.category,
-      };
-      setDetailLoaded((prev) => ({ ...prev, [item.url]: detail }));
-    } catch (e) {
-      setMsg({ ok: false, text: `詳細取得失敗: ${e instanceof Error ? e.message : 'エラー'}` });
-    } finally {
-      setDetailLoading((prev) => ({ ...prev, [item.url]: false }));
-    }
-  }, [detailLoaded, detailLoading]);
-
-  // ── Select article + auto-fetch detail ─────────────────────────────────────
-
-  const handleSelectArticle = useCallback(
-    (item: ArticleListItem) => {
-      setSelectedUrl(item.url);
-      if (!detailLoaded[item.url] && !detailLoading[item.url]) {
-        fetchDetail(item);
+        setKpi(data);
+      } catch (err) {
+        console.error('Failed to fetch KPI data:', err);
+      } finally {
+        setLoading(false);
       }
-    },
-    [detailLoaded, detailLoading, fetchDetail],
-  );
-
-  // ── Step 4: Send broadcast ─────────────────────────────────────────────────
-
-  const send = useCallback(async () => {
-    if (!selectedUrl) return;
-    const detail = detailLoaded[selectedUrl];
-    if (!detail) return;
-
-    setSending(true);
-    setMsg(null);
-    try {
-      const r = await fetch('/api/line/broadcast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          articleUrl: detail.url,
-          articleTitle: detail.title,
-          summaryTitle: detail.catchyTitle,
-          summaryText: detail.summaryText,
-          thumbnailUrl: detail.thumbnailUrl,
-          templateId,
-          articleCategory: detail.category,
-        }),
-      });
-      const d = await safeJsonParse(r);
-      if (!r.ok) throw new Error((d.error as string) || '配信に失敗しました');
-      setMsg({ ok: true, text: 'LINE配信が完了しました！' });
-      setStep('fetch');
-      setArticleList([]);
-      setDetailLoaded({});
-      setDetailLoading({});
-      setSelectedUrl(null);
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : '配信に失敗しました' });
-    } finally {
-      setSending(false);
     }
-  }, [selectedUrl, detailLoaded, templateId]);
 
-  // ── Test broadcast (admin only) ───────────────────────────────────────────
-
-  const sendTest = useCallback(async () => {
-    if (!selectedUrl) return;
-    const detail = detailLoaded[selectedUrl];
-    if (!detail) return;
-
-    setTestSending(true);
-    setMsg(null);
-    try {
-      const r = await fetch('/api/line/test-broadcast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          articleUrl: detail.url,
-          articleTitle: detail.title,
-          summaryTitle: detail.catchyTitle,
-          summaryText: detail.summaryText,
-          thumbnailUrl: detail.thumbnailUrl,
-          templateId,
-          articleCategory: detail.category,
-        }),
-      });
-      const d = await safeJsonParse(r);
-      if (!r.ok) throw new Error((d.error as string) || 'テスト配信に失敗しました');
-      setMsg({ ok: true, text: 'テスト配信が完了しました。LINEアプリで確認してください。' });
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : 'テスト配信に失敗しました' });
-    } finally {
-      setTestSending(false);
+    async function fetchRecentHistory() {
+      try {
+        const res = await fetch('/api/line/history?limit=5');
+        if (res.ok) {
+          const json = await res.json();
+          setRecentHistory(json.history ?? []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch history:', err);
+      } finally {
+        setHistoryLoading(false);
+      }
     }
-  }, [selectedUrl, detailLoaded, templateId]);
 
-  // ── Individual push ─────────────────────────────────────────────────────────
-
-  const sendPush = useCallback(async () => {
-    if (!selectedUrl || !pushUserId.trim()) return;
-    const detail = detailLoaded[selectedUrl];
-    if (!detail) return;
-
-    setPushSending(true);
-    setMsg(null);
-    try {
-      const r = await fetch('/api/line/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: pushUserId.trim(),
-          articleUrl: detail.url,
-          articleTitle: detail.title,
-          summaryTitle: detail.catchyTitle,
-          summaryText: detail.summaryText,
-          thumbnailUrl: detail.thumbnailUrl,
-          templateId,
-          articleCategory: detail.category,
-        }),
-      });
-      const d = await safeJsonParse(r);
-      if (!r.ok) throw new Error((d.error as string) || '個別配信に失敗しました');
-      setMsg({ ok: true, text: `個別配信が完了しました（User ID: ${pushUserId.trim()}）` });
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : '個別配信に失敗しました' });
-    } finally {
-      setPushSending(false);
-    }
-  }, [selectedUrl, detailLoaded, templateId, pushUserId]);
-
-  // ── Fetch followers ─────────────────────────────────────────────────────────
-
-  const fetchFollowers = useCallback(async () => {
-    setFollowersLoading(true);
-    setMsg(null);
-    try {
-      const r = await fetch('/api/line/followers');
-      const d = await safeJsonParse(r);
-      if (!r.ok) throw new Error((d.error as string) || 'フォロワー取得に失敗しました');
-      setFollowers((d.followers || []) as LineFollower[]);
-      setFollowersLoaded(true);
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : 'フォロワー取得に失敗しました' });
-    } finally {
-      setFollowersLoading(false);
-    }
+    fetchKpis();
+    fetchRecentHistory();
   }, []);
-
-  // ── Preview in new window ─────────────────────────────────────────────────
-
-  const openPreviewWindow = () => {
-    if (!selectedDetail) return;
-    const previewData = {
-      summaryTitle: selectedDetail.catchyTitle,
-      summaryText: selectedDetail.summaryText,
-      thumbnailUrl: selectedDetail.thumbnailUrl,
-      articleUrl: selectedDetail.url,
-      articleCategory: selectedDetail.category,
-      selectedTemplateId: templateId,
-    };
-    localStorage.setItem('linemag-preview', JSON.stringify(previewData));
-    window.open('/preview', '_blank', 'width=1200,height=800');
-  };
-
-  // ── Derived values ─────────────────────────────────────────────────────────
-
-  const selectedDetail = selectedUrl ? detailLoaded[selectedUrl] : null;
-  const selectedItem = articleList.find((a) => a.url === selectedUrl) ?? null;
-
-  const loadedCount = Object.keys(detailLoaded).length;
-  const loadingCount = Object.values(detailLoading).filter(Boolean).length;
-
-  const filteredFollowers = followerSearch
-    ? followers.filter(
-        (f) =>
-          f.displayName.toLowerCase().includes(followerSearch.toLowerCase()) ||
-          f.userId.toLowerCase().includes(followerSearch.toLowerCase())
-      )
-    : followers;
-
-  // Can proceed to template step only if selected article has detail loaded
-  const canProceedToTemplate = selectedUrl !== null && selectedDetail !== null;
-
-  // ── Categories and filtered/paginated articles ──────────────────────────────
-
-  const categories = Array.from(new Set(articleList.map((a) => a.category).filter(Boolean))) as string[];
-
-  const filteredArticles = categoryFilter === 'all'
-    ? articleList
-    : articleList.filter((a) => a.category === categoryFilter);
-
-  const totalPages = Math.max(1, Math.ceil(filteredArticles.length / PAGE_SIZE));
-  const paginatedArticles = filteredArticles.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-
-  // Suppress unused variable warning
-  void selectedItem;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-slate-800">マニュアル配信</h1>
-        <p className="text-sm text-slate-400 mt-1">
-          記事一覧取得 → 記事選択・詳細取得 → テンプレート選択 → 確認・配信
-        </p>
-      </div>
-
-      {/* Step Indicator */}
-      <div className="flex items-center gap-2 text-xs flex-wrap">
-        {([
-          { id: 'fetch' as Step, l: '1. 記事一覧取得' },
-          { id: 'select' as Step, l: '2. 記事選択' },
-          { id: 'template' as Step, l: '3. テンプレート' },
-          { id: 'confirm' as Step, l: '4. 確認・配信' },
-        ]).map((s, i) => (
-          <div key={s.id} className="flex items-center gap-2">
-            {i > 0 && <div className="w-6 h-px bg-slate-200" />}
-            <span
-              className={`px-2.5 py-1 rounded-full font-medium ${
-                step === s.id
-                  ? 'bg-green-100 text-green-700'
-                  : 'bg-slate-100 text-slate-400'
-              }`}
-            >
-              {s.l}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Message Toast */}
-      {msg && (
-        <div
-          className={`px-4 py-3 rounded-lg text-sm ${
-            msg.ok
-              ? 'bg-green-50 text-green-700 border border-green-200'
-              : 'bg-red-50 text-red-700 border border-red-200'
-          }`}
-        >
-          {msg.text}
+    <div className="max-w-6xl mx-auto">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">ダッシュボード</h1>
+          <p className="text-sm text-slate-500">LINE公式アカウント CRM 管理画面</p>
         </div>
-      )}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 border border-green-200">
+          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-xs font-medium text-green-700">システム稼働中</span>
+        </div>
+      </div>
 
-      {/* ================================================================== */}
-      {/* Step 1: 記事一覧取得 */}
-      {/* ================================================================== */}
-      {step === 'fetch' && (
-        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-green-50 flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-green-500"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.5}
-              viewBox="0 0 24 24"
+      {/* ── KPI Cards ──────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {loading
+          ? Array.from({ length: 6 }).map((_, i) => <KpiSkeleton key={i} />)
+          : kpiCards.map((card) => (
+              <Link
+                key={card.key}
+                href={card.link}
+                className="block rounded-2xl p-5 text-white shadow-sm hover:shadow-md transition-shadow"
+                style={{ background: card.gradient }}
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 grid place-items-center">
+                    {card.icon}
+                  </div>
+                  <ChevronRightIcon className="w-5 h-5 opacity-60" />
+                </div>
+                <div className="text-4xl font-bold mb-1">
+                  {formatCount(kpi[card.key])}
+                </div>
+                <div className="text-sm font-semibold opacity-90">{card.label}</div>
+                <div className="text-xs opacity-70">{card.description}</div>
+              </Link>
+            ))}
+      </div>
+
+      {/* ── Quick Actions ──────────────────────────────────────────────── */}
+      <div className="mt-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-slate-800">クイックアクション</h2>
+          <span className="text-sm text-slate-400">6件のアクション</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {quickActions.map((action) => (
+            <Link
+              key={action.label}
+              href={action.href}
+              className="flex items-center gap-4 p-4 bg-white rounded-xl border border-slate-200 hover:border-green-200 hover:shadow-sm transition-all group"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418"
-              />
-            </svg>
-          </div>
-          <h2 className="text-lg font-bold text-slate-800 mb-2">ブログ記事を取得</h2>
-          <p className="text-sm text-slate-500 mb-6">
-            MeetSCブログの最新記事一覧を取得します（高速）
-          </p>
-          <button
-            onClick={fetchArticleList}
-            disabled={listLoading}
-            className="inline-flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+              <div
+                className={`w-12 h-12 rounded-xl ${action.iconBg} grid place-items-center shrink-0`}
+              >
+                {action.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-slate-800">{action.label}</div>
+                <div className="text-xs text-slate-500">{action.description}</div>
+              </div>
+              <ChevronRightIcon className="w-5 h-5 text-slate-300 group-hover:text-green-500 transition-colors shrink-0" />
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Recent Activity ────────────────────────────────────────────── */}
+      <div className="mt-8 mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-slate-800">最近のアクティビティ</h2>
+          <Link
+            href="/dashboard/history"
+            className="text-sm text-green-600 hover:text-green-700 font-medium"
           >
-            {listLoading ? (
-              <>
-                <Spinner />
-                記事一覧を取得中...
-              </>
-            ) : (
-              '記事一覧を取得する'
-            )}
-          </button>
+            すべて表示
+          </Link>
         </div>
-      )}
-
-      {/* ================================================================== */}
-      {/* Step 2: 記事選択 + 詳細取得（progressive） */}
-      {/* ================================================================== */}
-      {step === 'select' && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h2 className="text-sm font-bold text-slate-800">
-              配信する記事を選択（{filteredArticles.length}件）
-            </h2>
-            {/* Category filter */}
-            {categories.length > 0 && (
-              <select
-                value={categoryFilter}
-                onChange={(e) => {
-                  setCategoryFilter(e.target.value);
-                  setPage(0);
-                }}
-                className="px-2.5 py-1 text-[11px] font-medium text-slate-600 bg-white border border-slate-200 rounded-md"
-              >
-                <option value="all">すべてのカテゴリー</option>
-                {categories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            )}
-            <button
-              onClick={fetchArticleList}
-              disabled={listLoading}
-              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-500 bg-white border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-50 transition-colors"
-            >
-              {listLoading ? (
-                <Spinner className="w-3 h-3" />
-              ) : (
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
-                </svg>
-              )}
-              再取得
-            </button>
-          </div>
-
-          {/* Progress bar for detail loading */}
-          {loadingCount > 0 && (
-            <div className="bg-white rounded-lg border border-slate-200 p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Spinner className="w-3.5 h-3.5 text-green-600" />
-                <span className="text-xs text-slate-600">
-                  {loadedCount}/{filteredArticles.length} 記事の要約を生成中...
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-green-500 rounded-full transition-all duration-500 ease-out"
-                  style={{
-                    width: `${filteredArticles.length > 0 ? (loadedCount / filteredArticles.length) * 100 : 0}%`,
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Article list */}
-          <div className="space-y-3">
-            {paginatedArticles.map((item) => {
-              const detail = detailLoaded[item.url];
-              const isLoading = detailLoading[item.url] ?? false;
-              const isSelected = selectedUrl === item.url;
-
-              return (
-                <ArticleCard
-                  key={item.url}
-                  article={{
-                    url: item.url,
-                    title: item.title,
-                    catchyTitle: detail?.catchyTitle,
-                    summaryText: detail?.summaryText,
-                    thumbnailUrl: item.thumbnailUrl,
-                    category: item.category,
-                  }}
-                  isSelected={isSelected}
-                  isLoading={isLoading}
-                  isDetailLoaded={!!detail}
-                  onSelect={() => handleSelectArticle(item)}
-                />
-              );
-            })}
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-4">
-              <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-30 transition-colors"
-              >
-                <BackArrow />
-                前へ
-              </button>
-              <span className="text-xs text-slate-500">
-                ページ {page + 1} / {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-30 transition-colors"
-              >
-                次へ
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                </svg>
-              </button>
-            </div>
-          )}
-
-          {/* Bottom navigation bar */}
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => {
-                setStep('fetch');
-                setArticleList([]);
-                setDetailLoaded({});
-                setDetailLoading({});
-                setSelectedUrl(null);
-              }}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-            >
-              <BackArrow />
-              記事一覧に戻る
-            </button>
-            <button
-              onClick={() => setStep('template')}
-              disabled={!canProceedToTemplate}
-              className="px-5 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-40 transition-colors"
-            >
-              次へ: テンプレート選択
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================== */}
-      {/* Step 3: テンプレート選択 */}
-      {/* ================================================================== */}
-      {step === 'template' && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-sm font-bold text-slate-800">配信テンプレートを選択</h2>
-          </div>
-          <TemplateSelector
-            templates={TEMPLATE_DEFINITIONS}
-            selected={templateId}
-            onSelect={setTemplateId}
-          />
-          {/* Bottom navigation bar */}
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setStep('select')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-            >
-              <BackArrow />
-              記事選択に戻る
-            </button>
-            <button
-              onClick={() => setStep('confirm')}
-              className="px-5 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
-            >
-              次へ: 確認画面
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================== */}
-      {/* Step 4: 確認・プレビュー・配信 */}
-      {/* ================================================================== */}
-      {step === 'confirm' && selectedDetail && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-sm font-bold text-slate-800">配信内容の確認</h2>
-          </div>
-
-          {/* Side-by-side layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Left: Article info */}
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <div className="p-5 space-y-4">
-                <div className="flex items-start gap-4">
-                  {selectedDetail.thumbnailUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={selectedDetail.thumbnailUrl}
-                      alt=""
-                      className="w-24 h-24 rounded-lg object-cover shrink-0"
-                    />
-                  )}
-                  <div className="min-w-0">
-                    {selectedDetail.category && (
-                      <span className="inline-block px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-500 mb-2">
-                        {selectedDetail.category}
-                      </span>
-                    )}
-                    <p className="text-[10px] text-slate-400 mb-0.5">キャッチタイトル</p>
-                    <h3 className="text-base font-bold text-slate-800 mb-3">
-                      {selectedDetail.catchyTitle}
-                    </h3>
-                    <p className="text-[10px] text-slate-400 mb-0.5">要約テキスト</p>
-                    <p className="text-sm text-slate-600 leading-relaxed">
-                      {selectedDetail.summaryText}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-6 pt-3 border-t border-slate-100">
-                  <div>
-                    <p className="text-[10px] text-slate-400">記事URL</p>
-                    <a
-                      href={selectedDetail.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-green-600 hover:underline break-all"
-                    >
-                      {selectedDetail.url}
-                    </a>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-6 pt-3 border-t border-slate-100">
-                  <div>
-                    <p className="text-[10px] text-slate-400">テンプレート</p>
-                    <p className="text-sm font-medium text-slate-700">
-                      {TEMPLATE_DEFINITIONS.find((t) => t.id === templateId)?.name}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400">配信先</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="deliveryMode"
-                          value="broadcast"
-                          checked={deliveryMode === 'broadcast'}
-                          onChange={() => setDeliveryMode('broadcast')}
-                          className="accent-green-600"
-                        />
-                        <span className="text-xs text-slate-700">全体配信</span>
-                      </label>
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="deliveryMode"
-                          value="push"
-                          checked={deliveryMode === 'push'}
-                          onChange={() => setDeliveryMode('push')}
-                          className="accent-green-600"
-                        />
-                        <span className="text-xs text-slate-700">個別配信</span>
-                      </label>
+        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+          {historyLoading ? (
+            <div className="p-6">
+              <div className="space-y-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 animate-pulse">
+                    <div className="w-8 h-8 rounded-lg bg-slate-100" />
+                    <div className="flex-1">
+                      <div className="h-4 w-48 bg-slate-100 rounded mb-1" />
+                      <div className="h-3 w-24 bg-slate-100 rounded" />
                     </div>
-                    {deliveryMode === 'push' && (
-                      <div className="mt-2 space-y-2">
-                        {/* Fetch followers button */}
-                        {!followersLoaded && (
-                          <button
-                            onClick={fetchFollowers}
-                            disabled={followersLoading}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 transition-colors"
-                          >
-                            {followersLoading ? (
-                              <>
-                                <Spinner className="w-3 h-3" />
-                                フォロワー取得中...
-                              </>
-                            ) : (
-                              <>
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                                </svg>
-                                フォロワー一覧を取得
-                              </>
-                            )}
-                          </button>
-                        )}
-
-                        {/* Follower list */}
-                        {followersLoaded && (
-                          <div className="border border-slate-200 rounded-lg overflow-hidden">
-                            {/* Search */}
-                            <div className="px-3 py-2 border-b border-slate-100 bg-slate-50">
-                              <input
-                                type="text"
-                                placeholder="ユーザー検索..."
-                                value={followerSearch}
-                                onChange={(e) => setFollowerSearch(e.target.value)}
-                                className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 bg-white"
-                              />
-                            </div>
-                            {/* List */}
-                            <div className="max-h-48 overflow-y-auto">
-                              {filteredFollowers.length === 0 && (
-                                <p className="px-3 py-3 text-xs text-slate-400 text-center">
-                                  {followerSearch ? '該当するユーザーがいません' : 'フォロワーがいません'}
-                                </p>
-                              )}
-                              {filteredFollowers.map((f) => (
-                                <button
-                                  key={f.userId}
-                                  onClick={() => setPushUserId(f.userId)}
-                                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-b-0 ${
-                                    pushUserId === f.userId ? 'bg-green-50' : ''
-                                  }`}
-                                >
-                                  {/* Avatar */}
-                                  {f.pictureUrl ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={f.pictureUrl}
-                                      alt=""
-                                      className="w-7 h-7 rounded-full object-cover shrink-0"
-                                    />
-                                  ) : (
-                                    <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
-                                      <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-                                      </svg>
-                                    </div>
-                                  )}
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-xs font-medium text-slate-800 truncate">
-                                      {f.displayName}
-                                    </p>
-                                    <p className="text-[10px] text-slate-400 truncate">
-                                      {f.userId}
-                                    </p>
-                                  </div>
-                                  {pushUserId === f.userId && (
-                                    <svg className="w-4 h-4 text-green-600 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                  )}
-                                </button>
-                              ))}
-                            </div>
-                            {/* Footer */}
-                            <div className="px-3 py-1.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
-                              <span className="text-[10px] text-slate-400">
-                                {followers.length}人のフォロワー
-                              </span>
-                              <button
-                                onClick={fetchFollowers}
-                                disabled={followersLoading}
-                                className="text-[10px] text-blue-500 hover:text-blue-700"
-                              >
-                                再取得
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Manual input fallback */}
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-slate-400">または手動入力:</span>
-                          <input
-                            type="text"
-                            placeholder="LINE User ID (U...)"
-                            value={pushUserId}
-                            onChange={(e) => setPushUserId(e.target.value)}
-                            className="flex-1 px-2.5 py-1 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500"
-                          />
-                        </div>
-                      </div>
+                    <div className="h-5 w-16 bg-slate-100 rounded-full" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : recentHistory.length === 0 ? (
+            <div className="p-8 text-center">
+              <MegaphoneIcon className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-400">まだ配信履歴がありません</p>
+            </div>
+          ) : (
+            recentHistory.map((item, idx) => (
+              <div key={item.id ?? idx} className="flex items-center gap-4 px-5 py-3.5">
+                <div className="w-8 h-8 rounded-lg bg-purple-50 grid place-items-center shrink-0">
+                  <MegaphoneIcon className="w-4 h-4 text-purple-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-slate-700 truncate">
+                    {item.title || item.templateId || '一斉配信'}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <ClockIcon className="w-3.5 h-3.5" />
+                    <span>
+                      {formatTime(item.sentAt || item.createdAt || '')}
+                    </span>
+                    {item.recipientCount != null && (
+                      <span className="ml-2">{item.recipientCount}人に送信</span>
                     )}
                   </div>
                 </div>
+                {statusBadge(item.status)}
               </div>
-            </div>
-
-            {/* Right: LINE message preview */}
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-500">LINEメッセージ プレビュー</p>
-                <button
-                  onClick={openPreviewWindow}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-500 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                  </svg>
-                  別ウィンドウでプレビュー
-                </button>
-              </div>
-              <div className="p-5 flex justify-center">
-                <FlexPreview
-                  templateId={templateId}
-                  summaryTitle={selectedDetail.catchyTitle}
-                  summaryText={selectedDetail.summaryText}
-                  thumbnailUrl={selectedDetail.thumbnailUrl}
-                  articleUrl={selectedDetail.url}
-                  articleCategory={selectedDetail.category || undefined}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom navigation bar */}
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setStep('template')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-            >
-              <BackArrow />
-              テンプレート選択に戻る
-            </button>
-            <div>{/* Spacer - send button is in the card below */}</div>
-          </div>
-
-          {/* Send buttons */}
-          <div className="bg-white rounded-xl border border-slate-200 px-5 py-4 space-y-3">
-            {/* Test broadcast button */}
-            <button
-              onClick={sendTest}
-              disabled={testSending || sending}
-              className="w-full py-3 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-            >
-              {testSending ? (
-                <>
-                  <Spinner />
-                  テスト配信中...
-                </>
-              ) : (
-                <>
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
-                    />
-                  </svg>
-                  テスト配信（自分のみ）
-                </>
-              )}
-            </button>
-            <p className="text-[11px] text-slate-400 text-center">
-              管理者のLINEにのみ送信されます。
-              {deliveryMode === 'push' && pushUserId && (
-                <span className="block mt-0.5">
-                  個別配信先: {followers.find(f => f.userId === pushUserId)?.displayName || pushUserId}
-                </span>
-              )}
-            </p>
-
-            <div className="h-px bg-slate-100" />
-
-            {/* Full broadcast button */}
-            <button
-              onClick={send}
-              disabled={sending || testSending}
-              className="w-full py-3 bg-green-600 text-white text-sm font-bold rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-            >
-              {sending ? (
-                <>
-                  <Spinner />
-                  配信中...
-                </>
-              ) : (
-                <>
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
-                    />
-                  </svg>
-                  LINE配信を実行する（全フォロワー）
-                </>
-              )}
-            </button>
-            {deliveryMode === 'push' && (
-              <>
-                <div className="h-px bg-slate-100" />
-                <button
-                  onClick={sendPush}
-                  disabled={pushSending || !pushUserId.trim() || sending || testSending}
-                  className="w-full py-3 bg-purple-600 text-white text-sm font-bold rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-                >
-                  {pushSending ? (
-                    <>
-                      <Spinner />
-                      個別配信中...
-                    </>
-                  ) : (
-                    <>
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
-                        />
-                      </svg>
-                      個別配信を実行する
-                    </>
-                  )}
-                </button>
-              </>
-            )}
-          </div>
+            ))
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

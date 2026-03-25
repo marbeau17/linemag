@@ -9,6 +9,11 @@ import { createClient } from '@/lib/supabase/client';
 /*  Icons (inline SVG, stroke-based)                                  */
 /* ------------------------------------------------------------------ */
 const ICONS: Record<string, React.ReactNode> = {
+  home: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+    </svg>
+  ),
   send: (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
@@ -97,7 +102,8 @@ const NAV_GROUPS = [
   {
     label: '配信管理',
     items: [
-      { label: 'マニュアル配信', href: '/dashboard', icon: 'send' },
+      { label: 'ダッシュボード', href: '/dashboard', icon: 'home' },
+      { label: 'マニュアル配信', href: '/dashboard/broadcast', icon: 'send' },
       { label: 'スケジュール', href: '/dashboard/schedule', icon: 'clock' },
       { label: '配信履歴', href: '/dashboard/history', icon: 'history' },
       { label: 'ログ', href: '/dashboard/logs', icon: 'terminal' },
