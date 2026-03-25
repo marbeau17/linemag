@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -151,6 +152,16 @@ export default function CouponAnalyticsPage() {
 
   return (
     <div className="space-y-8">
+      {/* ── Breadcrumb ─────────────────────────────────────────────────── */}
+      <div className="mb-4">
+        <Link href="/dashboard/analytics" className="text-sm text-slate-500 hover:text-green-600 transition-colors flex items-center gap-1">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          分析ダッシュボードに戻る
+        </Link>
+      </div>
+
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-xl font-bold text-slate-800">クーポン分析</h1>

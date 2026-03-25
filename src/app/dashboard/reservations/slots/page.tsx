@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 /* ─── types ─── */
 interface BusinessHour {
@@ -58,6 +60,13 @@ const btnPrimary =
 
 /* ════════════════════════════════════════════════════════════════ */
 export default function SlotsSettingsPage() {
+  const pathname = usePathname();
+  const subNav = [
+    { label: '予約一覧', href: '/dashboard/reservations' },
+    { label: 'カレンダー', href: '/dashboard/reservations/calendar' },
+    { label: 'スロット設定', href: '/dashboard/reservations/slots' },
+  ];
+
   /* ─── booking settings state ─── */
   const [settings, setSettings] = useState<BookingSettings>(DEFAULT_SETTINGS);
   const [newClosedDate, setNewClosedDate] = useState('');
@@ -244,6 +253,26 @@ export default function SlotsSettingsPage() {
   /* ────────────────────────── render ────────────────────────── */
   return (
     <div className="space-y-8">
+      {/* Sub-navigation */}
+      <div className="flex items-center gap-1 mb-6 border-b border-slate-200 pb-3">
+        {subNav.map((item) => {
+          const active = item.href === '/dashboard/reservations'
+            ? pathname === item.href
+            : pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                active ? 'bg-green-100 text-green-700' : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+
       {/* header */}
       <div>
         <h1 className="text-xl font-bold text-slate-800">スロット設定</h1>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -88,6 +89,12 @@ function truncate(str: string, len: number): string {
 // Component
 // ---------------------------------------------------------------------------
 export default function CrmPage() {
+  const pathname = usePathname();
+  const subNav = [
+    { label: '顧客一覧', href: '/dashboard/crm' },
+    { label: 'セグメント', href: '/dashboard/crm/segments' },
+  ];
+
   // State
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
@@ -172,6 +179,26 @@ export default function CrmPage() {
   // -------------------------------------------------------------------------
   return (
     <div className="space-y-6">
+      {/* Sub-navigation */}
+      <div className="flex items-center gap-1 mb-6 border-b border-slate-200 pb-3">
+        {subNav.map((item) => {
+          const active = item.href === '/dashboard/crm'
+            ? pathname === item.href
+            : pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                active ? 'bg-green-100 text-green-700' : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

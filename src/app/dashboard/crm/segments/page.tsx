@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -40,6 +42,12 @@ const formatDate = (iso: string | null) => {
 /* ------------------------------------------------------------------ */
 
 export default function SegmentsPage() {
+  const pathname = usePathname();
+  const subNav = [
+    { label: '顧客一覧', href: '/dashboard/crm' },
+    { label: 'セグメント', href: '/dashboard/crm/segments' },
+  ];
+
   // ----- data state -----
   const [segments, setSegments] = useState<Segment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -253,6 +261,26 @@ export default function SegmentsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Sub-navigation */}
+      <div className="flex items-center gap-1 mb-6 border-b border-slate-200 pb-3">
+        {subNav.map((item) => {
+          const active = item.href === '/dashboard/crm'
+            ? pathname === item.href
+            : pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                active ? 'bg-green-100 text-green-700' : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+
       {/* ---------- Header ---------- */}
       <div className="flex items-center justify-between">
         <div>
@@ -465,6 +493,16 @@ export default function SegmentsPage() {
                   <td className="px-5 py-3 text-xs text-slate-500">{formatDate(seg.created_at)}</td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      <Link
+                        href={`/dashboard/crm/segments/${seg.id}`}
+                        className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors rounded-md hover:bg-blue-50"
+                        title="詳細"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      </Link>
                       <button
                         onClick={() => openEdit(seg)}
                         className="p-1.5 text-slate-400 hover:text-green-600 transition-colors rounded-md hover:bg-green-50"

@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import type { Reservation, BookingSettings } from '@/types/booking';
 import {
   RESERVATION_STATUS_LABELS,
@@ -62,6 +64,13 @@ const STATUS_DOT_COLORS: Record<string, string> = {
 /*  Page component                                                     */
 /* ------------------------------------------------------------------ */
 export default function ReservationCalendarPage() {
+  const pathname = usePathname();
+  const subNav = [
+    { label: '予約一覧', href: '/dashboard/reservations' },
+    { label: 'カレンダー', href: '/dashboard/reservations/calendar' },
+    { label: 'スロット設定', href: '/dashboard/reservations/slots' },
+  ];
+
   const today = useMemo(() => new Date(), []);
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth()); // 0-based
@@ -189,6 +198,26 @@ export default function ReservationCalendarPage() {
 
   return (
     <div className="space-y-6">
+      {/* Sub-navigation */}
+      <div className="flex items-center gap-1 mb-6 border-b border-slate-200 pb-3">
+        {subNav.map((item) => {
+          const active = item.href === '/dashboard/reservations'
+            ? pathname === item.href
+            : pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                active ? 'bg-green-100 text-green-700' : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-slate-800">予約カレンダー</h1>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -766,6 +767,16 @@ export default function MAPage() {
 
   return (
     <div className="space-y-6">
+      {/* Sub-nav */}
+      <div className="flex items-center gap-1 mb-6 border-b border-slate-200 pb-3">
+        <Link href="/dashboard/ma" className="px-3 py-1.5 rounded-lg text-sm font-medium bg-green-100 text-green-700">
+          シナリオ
+        </Link>
+        <Link href="/dashboard/ma/ab-tests" className="px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100">
+          A/Bテスト
+        </Link>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

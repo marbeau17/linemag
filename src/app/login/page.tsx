@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
@@ -144,6 +145,12 @@ export default function LoginPage() {
             </button>
           </form>
         </div>
+
+        <p className="mt-4 text-center">
+          <Link href="/" className="text-xs text-slate-400 hover:text-green-600 transition-colors">
+            ← ホームに戻る
+          </Link>
+        </p>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { CouponIssue } from '@/types/coupon';
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,14 @@ export default function LiffCouponsPage() {
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <div className="bg-[#06C755] px-4 pt-12 pb-6">
+        <div className="flex items-center gap-2 mb-3">
+          <Link href="/liff/mypage" className="text-white/70 hover:text-white">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </Link>
+          <span className="text-sm font-medium text-white/70">マイページ</span>
+        </div>
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
             <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
