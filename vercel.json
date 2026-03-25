@@ -29,14 +29,6 @@
     {
       "path": "/api/cron/line-broadcast",
       "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/reservation-reminder",
-      "schedule": "*/10 * * * *"
-    },
-    {
-      "path": "/api/cron/ma-executor",
-      "schedule": "0 * * * *"
     }
   ]
 }
