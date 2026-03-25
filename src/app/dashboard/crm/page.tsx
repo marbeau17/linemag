@@ -9,14 +9,14 @@ import { usePathname } from 'next/navigation';
 // ---------------------------------------------------------------------------
 interface Customer {
   id: string;
-  line_user_id: string;
-  display_name: string;
-  email?: string;
-  profile_image_url?: string;
-  membership_tier: 'free' | 'silver' | 'gold' | 'platinum';
-  message_count: number;
-  last_seen_at: string;
-  prefecture?: string;
+  lineUserId: string;
+  displayName: string | null;
+  email?: string | null;
+  pictureUrl?: string | null;
+  membershipTier: string;
+  messageCount: number;
+  lastSeenAt: string;
+  prefecture?: string | null;
 }
 
 interface CustomersResponse {
@@ -77,11 +77,13 @@ function relativeTime(iso: string): string {
   return `${diffYear}年前`;
 }
 
-function initials(name: string): string {
+function initials(name: string | null | undefined): string {
+  if (!name) return '?';
   return name.slice(0, 1).toUpperCase();
 }
 
-function truncate(str: string, len: number): string {
+function truncate(str: string | null | undefined, len: number): string {
+  if (!str) return '-';
   return str.length > len ? str.slice(0, len) + '...' : str;
 }
 
@@ -339,20 +341,20 @@ export default function CrmPage() {
                     {/* Profile + Name */}
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3">
-                        {c.profile_image_url ? (
+                        {c.pictureUrl ? (
                           <img
-                            src={c.profile_image_url}
-                            alt={c.display_name}
+                            src={c.pictureUrl}
+                            alt={c.displayName || ''}
                             className="w-8 h-8 rounded-full object-cover shrink-0"
                           />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-green-100 text-green-700 grid place-items-center text-xs font-bold shrink-0">
-                            {initials(c.display_name)}
+                            {initials(c.displayName)}
                           </div>
                         )}
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-slate-800 truncate">
-                            {c.display_name}
+                            {c.displayName}
                           </p>
                           {c.email && (
                             <p className="text-xs text-slate-400 truncate">{c.email}</p>
@@ -363,28 +365,28 @@ export default function CrmPage() {
 
                     {/* LINE ID */}
                     <td className="px-5 py-3 text-xs text-slate-500 font-mono whitespace-nowrap">
-                      {truncate(c.line_user_id, 12)}
+                      {truncate(c.lineUserId, 12)}
                     </td>
 
                     {/* Tier badge */}
                     <td className="px-5 py-3">
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
-                          TIER_STYLES[c.membership_tier] ?? TIER_STYLES.free
+                          TIER_STYLES[c.membershipTier] ?? TIER_STYLES.free
                         }`}
                       >
-                        {c.membership_tier}
+                        {c.membershipTier}
                       </span>
                     </td>
 
                     {/* Message count */}
                     <td className="px-5 py-3 text-sm text-slate-700 text-right tabular-nums">
-                      {c.message_count.toLocaleString()}
+                      {(c.messageCount ?? 0).toLocaleString()}
                     </td>
 
                     {/* Last seen */}
                     <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
-                      {relativeTime(c.last_seen_at)}
+                      {relativeTime(c.lastSeenAt)}
                     </td>
 
                     {/* Actions */}
