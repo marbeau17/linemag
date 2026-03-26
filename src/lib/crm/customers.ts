@@ -28,6 +28,25 @@ export interface Customer {
   attributes: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
+  // New attribute fields
+  fullName: string | null;
+  fullNameKana: string | null;
+  nickname: string | null;
+  postalCode: string | null;
+  city: string | null;
+  occupation: string | null;
+  company: string | null;
+  ageGroup: string | null;
+  acquisitionSource: string | null;
+  acquisitionMedium: string | null;
+  acquisitionCampaign: string | null;
+  engagementScore: number;
+  lifecycleStage: string;
+  totalPurchaseAmount: number;
+  purchaseCount: number;
+  lastPurchaseAt: string | null;
+  reservationCount: number;
+  couponUsageCount: number;
 }
 
 export interface CustomerListParams {
@@ -37,6 +56,9 @@ export interface CustomerListParams {
   tier?: string;
   prefecture?: string;
   tags?: string[];
+  ageGroup?: string;
+  lifecycleStage?: string;
+  acquisitionSource?: string;
   sortBy?: 'last_seen_at' | 'created_at' | 'display_name' | 'message_count';
   sortOrder?: 'asc' | 'desc';
 }
@@ -72,6 +94,25 @@ interface CustomerRow {
   attributes: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+  // New attribute fields
+  full_name: string | null;
+  full_name_kana: string | null;
+  nickname: string | null;
+  postal_code: string | null;
+  city: string | null;
+  occupation: string | null;
+  company: string | null;
+  age_group: string | null;
+  acquisition_source: string | null;
+  acquisition_medium: string | null;
+  acquisition_campaign: string | null;
+  engagement_score: number;
+  lifecycle_stage: string;
+  total_purchase_amount: number;
+  purchase_count: number;
+  last_purchase_at: string | null;
+  reservation_count: number;
+  coupon_usage_count: number;
 }
 
 function rowToCustomer(row: CustomerRow): Customer {
@@ -94,6 +135,25 @@ function rowToCustomer(row: CustomerRow): Customer {
     attributes: row.attributes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // New attribute fields
+    fullName: row.full_name,
+    fullNameKana: row.full_name_kana,
+    nickname: row.nickname,
+    postalCode: row.postal_code,
+    city: row.city,
+    occupation: row.occupation,
+    company: row.company,
+    ageGroup: row.age_group,
+    acquisitionSource: row.acquisition_source,
+    acquisitionMedium: row.acquisition_medium,
+    acquisitionCampaign: row.acquisition_campaign,
+    engagementScore: row.engagement_score,
+    lifecycleStage: row.lifecycle_stage,
+    totalPurchaseAmount: row.total_purchase_amount,
+    purchaseCount: row.purchase_count,
+    lastPurchaseAt: row.last_purchase_at,
+    reservationCount: row.reservation_count,
+    couponUsageCount: row.coupon_usage_count,
   };
 }
 
@@ -117,6 +177,25 @@ function customerToRow(
   if (data.lastSeenAt !== undefined) map.last_seen_at = data.lastSeenAt;
   if (data.blockedAt !== undefined) map.blocked_at = data.blockedAt;
   if (data.attributes !== undefined) map.attributes = data.attributes;
+  // New attribute fields
+  if (data.fullName !== undefined) map.full_name = data.fullName;
+  if (data.fullNameKana !== undefined) map.full_name_kana = data.fullNameKana;
+  if (data.nickname !== undefined) map.nickname = data.nickname;
+  if (data.postalCode !== undefined) map.postal_code = data.postalCode;
+  if (data.city !== undefined) map.city = data.city;
+  if (data.occupation !== undefined) map.occupation = data.occupation;
+  if (data.company !== undefined) map.company = data.company;
+  if (data.ageGroup !== undefined) map.age_group = data.ageGroup;
+  if (data.acquisitionSource !== undefined) map.acquisition_source = data.acquisitionSource;
+  if (data.acquisitionMedium !== undefined) map.acquisition_medium = data.acquisitionMedium;
+  if (data.acquisitionCampaign !== undefined) map.acquisition_campaign = data.acquisitionCampaign;
+  if (data.engagementScore !== undefined) map.engagement_score = data.engagementScore;
+  if (data.lifecycleStage !== undefined) map.lifecycle_stage = data.lifecycleStage;
+  if (data.totalPurchaseAmount !== undefined) map.total_purchase_amount = data.totalPurchaseAmount;
+  if (data.purchaseCount !== undefined) map.purchase_count = data.purchaseCount;
+  if (data.lastPurchaseAt !== undefined) map.last_purchase_at = data.lastPurchaseAt;
+  if (data.reservationCount !== undefined) map.reservation_count = data.reservationCount;
+  if (data.couponUsageCount !== undefined) map.coupon_usage_count = data.couponUsageCount;
 
   return map;
 }
@@ -164,6 +243,21 @@ export async function getCustomers(
     for (const tag of params.tags) {
       query = query.contains('attributes', { tags: [tag] });
     }
+  }
+
+  // Filter by age group
+  if (params.ageGroup) {
+    query = query.eq('age_group', params.ageGroup);
+  }
+
+  // Filter by lifecycle stage
+  if (params.lifecycleStage) {
+    query = query.eq('lifecycle_stage', params.lifecycleStage);
+  }
+
+  // Filter by acquisition source
+  if (params.acquisitionSource) {
+    query = query.eq('acquisition_source', params.acquisitionSource);
   }
 
   // Sorting & pagination

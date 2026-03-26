@@ -11,12 +11,17 @@ interface Customer {
   id: string;
   lineUserId: string;
   displayName: string | null;
+  fullName: string | null;
   email?: string | null;
   pictureUrl?: string | null;
   membershipTier: string;
   messageCount: number;
   lastSeenAt: string;
   prefecture?: string | null;
+  engagementScore: number;
+  lifecycleStage: string;
+  ageGroup: string | null;
+  acquisitionSource: string | null;
 }
 
 interface CustomersResponse {
@@ -45,6 +50,46 @@ const TIER_STYLES: Record<string, string> = {
   gold: 'bg-amber-100 text-amber-700',
   platinum: 'bg-purple-100 text-purple-700',
 };
+
+const AGE_GROUP_OPTIONS = [
+  { value: '', label: '全て' },
+  { value: '10代', label: '10代' },
+  { value: '20代', label: '20代' },
+  { value: '30代', label: '30代' },
+  { value: '40代', label: '40代' },
+  { value: '50代', label: '50代' },
+  { value: '60代以上', label: '60代以上' },
+] as const;
+
+const LIFECYCLE_OPTIONS = [
+  { value: '', label: '全て' },
+  { value: '新規', label: '新規' },
+  { value: 'アクティブ', label: 'アクティブ' },
+  { value: '休眠', label: '休眠' },
+  { value: '離脱', label: '離脱' },
+] as const;
+
+const LIFECYCLE_STYLES: Record<string, string> = {
+  '新規': 'bg-emerald-100 text-emerald-700',
+  'アクティブ': 'bg-blue-100 text-blue-700',
+  '休眠': 'bg-amber-100 text-amber-700',
+  '離脱': 'bg-red-100 text-red-700',
+};
+
+const ACQUISITION_SOURCE_OPTIONS = [
+  { value: '', label: '全て' },
+  { value: 'QR', label: 'QR' },
+  { value: 'URL', label: 'URL' },
+  { value: '検索', label: '検索' },
+  { value: '広告', label: '広告' },
+  { value: '紹介', label: '紹介' },
+] as const;
+
+const SORT_OPTIONS = [
+  { value: 'last_seen_at', label: '最終接触日' },
+  { value: 'message_count', label: 'メッセージ数' },
+  { value: 'engagement_score', label: 'エンゲージメント' },
+] as const;
 
 const PREFECTURES = [
   '', '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
@@ -87,6 +132,14 @@ function truncate(str: string | null | undefined, len: number): string {
   return str.length > len ? str.slice(0, len) + '...' : str;
 }
 
+function engagementColor(score: number): string {
+  if (score >= 80) return 'bg-emerald-500';
+  if (score >= 60) return 'bg-blue-500';
+  if (score >= 40) return 'bg-amber-500';
+  if (score >= 20) return 'bg-orange-500';
+  return 'bg-red-500';
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -105,6 +158,10 @@ export default function CrmPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [tier, setTier] = useState('');
   const [prefecture, setPrefecture] = useState('');
+  const [ageGroup, setAgeGroup] = useState('');
+  const [lifecycleStage, setLifecycleStage] = useState('');
+  const [acquisitionSource, setAcquisitionSource] = useState('');
+  const [sortBy, setSortBy] = useState('last_seen_at');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -124,7 +181,7 @@ export default function CrmPage() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [tier, prefecture]);
+  }, [tier, prefecture, ageGroup, lifecycleStage, acquisitionSource, sortBy]);
 
   // Fetch customers
   const fetchCustomers = useCallback(async () => {
@@ -134,12 +191,15 @@ export default function CrmPage() {
       const params = new URLSearchParams({
         page: String(page),
         perPage: String(PER_PAGE),
-        sortBy: 'last_seen_at',
+        sortBy,
         sortOrder: 'desc',
       });
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (tier) params.set('tier', tier);
       if (prefecture) params.set('prefecture', prefecture);
+      if (ageGroup) params.set('ageGroup', ageGroup);
+      if (lifecycleStage) params.set('lifecycleStage', lifecycleStage);
+      if (acquisitionSource) params.set('acquisitionSource', acquisitionSource);
 
       const res = await fetch(`/api/crm/customers?${params.toString()}`);
       if (!res.ok) throw new Error('顧客データの取得に失敗しました');
@@ -151,7 +211,7 @@ export default function CrmPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch, tier, prefecture]);
+  }, [page, debouncedSearch, tier, prefecture, ageGroup, lifecycleStage, acquisitionSource, sortBy]);
 
   useEffect(() => {
     fetchCustomers();
@@ -175,6 +235,9 @@ export default function CrmPage() {
     }
     return pages;
   }
+
+  const selectClass =
+    'px-3 py-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400 transition-colors';
 
   // -------------------------------------------------------------------------
   // Render
@@ -242,7 +305,7 @@ export default function CrmPage() {
           <select
             value={tier}
             onChange={(e) => setTier(e.target.value)}
-            className="px-3 py-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400 transition-colors"
+            className={selectClass}
           >
             {TIER_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -255,12 +318,67 @@ export default function CrmPage() {
           <select
             value={prefecture}
             onChange={(e) => setPrefecture(e.target.value)}
-            className="px-3 py-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400 transition-colors"
+            className={selectClass}
           >
             <option value="">都道府県</option>
             {PREFECTURES.filter(Boolean).map((pref) => (
               <option key={pref} value={pref}>
                 {pref}
+              </option>
+            ))}
+          </select>
+
+          {/* Age group filter */}
+          <select
+            value={ageGroup}
+            onChange={(e) => setAgeGroup(e.target.value)}
+            className={selectClass}
+          >
+            <option value="">年齢層</option>
+            {AGE_GROUP_OPTIONS.filter((o) => o.value).map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {/* Lifecycle filter */}
+          <select
+            value={lifecycleStage}
+            onChange={(e) => setLifecycleStage(e.target.value)}
+            className={selectClass}
+          >
+            <option value="">ライフサイクル</option>
+            {LIFECYCLE_OPTIONS.filter((o) => o.value).map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {/* Acquisition source filter */}
+          <select
+            value={acquisitionSource}
+            onChange={(e) => setAcquisitionSource(e.target.value)}
+            className={selectClass}
+          >
+            <option value="">流入経路</option>
+            {ACQUISITION_SOURCE_OPTIONS.filter((o) => o.value).map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {/* Sort */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className={selectClass}
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
               </option>
             ))}
           </select>
@@ -295,6 +413,12 @@ export default function CrmPage() {
                 <th className="text-left px-5 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   最終接触
                 </th>
+                <th className="text-left px-5 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  エンゲージメント
+                </th>
+                <th className="text-left px-5 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  ステージ
+                </th>
                 <th className="text-center px-5 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   操作
                 </th>
@@ -303,7 +427,7 @@ export default function CrmPage() {
             <tbody>
               {loading && customers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-16 text-center text-sm text-slate-400">
+                  <td colSpan={8} className="px-5 py-16 text-center text-sm text-slate-400">
                     <svg
                       className="animate-spin w-5 h-5 mx-auto mb-2 text-slate-300"
                       viewBox="0 0 24 24"
@@ -328,78 +452,111 @@ export default function CrmPage() {
                 </tr>
               ) : customers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-16 text-center text-sm text-slate-400">
+                  <td colSpan={8} className="px-5 py-16 text-center text-sm text-slate-400">
                     該当する顧客が見つかりませんでした。
                   </td>
                 </tr>
               ) : (
-                customers.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors"
-                  >
-                    {/* Profile + Name */}
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-3">
-                        {c.pictureUrl ? (
-                          <img
-                            src={c.pictureUrl}
-                            alt={c.displayName || ''}
-                            className="w-8 h-8 rounded-full object-cover shrink-0"
-                          />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-green-100 text-green-700 grid place-items-center text-xs font-bold shrink-0">
-                            {initials(c.displayName)}
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-800 truncate">
-                            {c.displayName}
-                          </p>
-                          {c.email && (
-                            <p className="text-xs text-slate-400 truncate">{c.email}</p>
+                customers.map((c) => {
+                  const name = c.fullName || c.displayName;
+                  return (
+                    <tr
+                      key={c.id}
+                      className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors"
+                    >
+                      {/* Profile + Name */}
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          {c.pictureUrl ? (
+                            <img
+                              src={c.pictureUrl}
+                              alt={name || ''}
+                              className="w-8 h-8 rounded-full object-cover shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-green-100 text-green-700 grid place-items-center text-xs font-bold shrink-0">
+                              {initials(name)}
+                            </div>
                           )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">
+                              {name || '-'}
+                            </p>
+                            {c.email && (
+                              <p className="text-xs text-slate-400 truncate">{c.email}</p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* LINE ID */}
-                    <td className="px-5 py-3 text-xs text-slate-500 font-mono whitespace-nowrap">
-                      {truncate(c.lineUserId, 12)}
-                    </td>
+                      {/* LINE ID */}
+                      <td className="px-5 py-3 text-xs text-slate-500 font-mono whitespace-nowrap">
+                        {truncate(c.lineUserId, 12)}
+                      </td>
 
-                    {/* Tier badge */}
-                    <td className="px-5 py-3">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
-                          TIER_STYLES[c.membershipTier] ?? TIER_STYLES.free
-                        }`}
-                      >
-                        {c.membershipTier}
-                      </span>
-                    </td>
+                      {/* Tier badge */}
+                      <td className="px-5 py-3">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
+                            TIER_STYLES[c.membershipTier] ?? TIER_STYLES.free
+                          }`}
+                        >
+                          {c.membershipTier}
+                        </span>
+                      </td>
 
-                    {/* Message count */}
-                    <td className="px-5 py-3 text-sm text-slate-700 text-right tabular-nums">
-                      {(c.messageCount ?? 0).toLocaleString()}
-                    </td>
+                      {/* Message count */}
+                      <td className="px-5 py-3 text-sm text-slate-700 text-right tabular-nums">
+                        {(c.messageCount ?? 0).toLocaleString()}
+                      </td>
 
-                    {/* Last seen */}
-                    <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
-                      {relativeTime(c.lastSeenAt)}
-                    </td>
+                      {/* Last seen */}
+                      <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
+                        {relativeTime(c.lastSeenAt)}
+                      </td>
 
-                    {/* Actions */}
-                    <td className="px-5 py-3 text-center">
-                      <Link
-                        href={`/dashboard/crm/${c.id}`}
-                        className="inline-flex items-center px-2.5 py-1 text-xs font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
-                      >
-                        詳細
-                      </Link>
-                    </td>
-                  </tr>
-                ))
+                      {/* Engagement score bar */}
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden min-w-[60px]">
+                            <div
+                              className={`h-full rounded-full ${engagementColor(c.engagementScore ?? 0)}`}
+                              style={{ width: `${Math.min(100, Math.max(0, c.engagementScore ?? 0))}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-slate-500 tabular-nums w-7 text-right">
+                            {c.engagementScore ?? 0}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Lifecycle stage badge */}
+                      <td className="px-5 py-3">
+                        {c.lifecycleStage ? (
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                              LIFECYCLE_STYLES[c.lifecycleStage] ?? 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {c.lifecycleStage}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">-</span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-5 py-3 text-center">
+                        <Link
+                          href={`/dashboard/crm/${c.id}`}
+                          className="inline-flex items-center px-2.5 py-1 text-xs font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
+                        >
+                          詳細
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

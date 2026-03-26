@@ -21,7 +21,11 @@ export interface Customer {
   firstSeenAt: string;
   lastSeenAt: string;
   blockedAt: string | null;
+  lifecycleStage: 'new' | 'active' | 'dormant' | 'churned';
+  ageGroup: '10s' | '20s' | '30s' | '40s' | '50s' | '60plus' | null;
   attributes: Record<string, unknown>;
+  customFields?: CustomFieldValue[];
+  tagCategories?: TagCategory[];
   createdAt: string;
   updatedAt: string;
 }
@@ -153,4 +157,79 @@ export const TIER_COLORS: Record<string, string> = {
   silver: 'bg-gray-100 text-gray-700',
   gold: 'bg-amber-100 text-amber-700',
   platinum: 'bg-purple-100 text-purple-700',
+};
+
+// ─── カスタムフィールド ─────────────────────────────────────────────────────
+
+export interface CustomFieldDefinition {
+  id: string;
+  name: string;
+  fieldKey: string;
+  fieldType: 'text' | 'number' | 'date' | 'select' | 'multiselect' | 'boolean';
+  options: string[];
+  isRequired: boolean;
+  displayOrder: number;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomFieldValue {
+  id: string;
+  customerId: string;
+  fieldId: string;
+  valueText: string | null;
+  valueNumber: number | null;
+  valueDate: string | null;
+  valueJson: unknown;
+  valueBoolean: boolean | null;
+  definition?: CustomFieldDefinition;
+}
+
+// ─── タグカテゴリ ───────────────────────────────────────────────────────────
+
+export interface TagCategory {
+  id: string;
+  name: string;
+  color: string;
+  displayOrder: number;
+  createdAt: string;
+}
+
+// ─── フィールドタイプ日本語ラベル ────────────────────────────────────────────
+
+export const FIELD_TYPE_LABELS: Record<string, string> = {
+  text: 'テキスト',
+  number: '数値',
+  date: '日付',
+  select: '選択',
+  multiselect: '複数選択',
+  boolean: 'チェックボックス',
+};
+
+// ─── ライフサイクルステージ日本語ラベル ──────────────────────────────────────
+
+export const LIFECYCLE_LABELS: Record<string, string> = {
+  new: '新規',
+  active: 'アクティブ',
+  dormant: '休眠',
+  churned: '離脱',
+};
+
+export const LIFECYCLE_COLORS: Record<string, string> = {
+  new: 'bg-blue-100 text-blue-700',
+  active: 'bg-green-100 text-green-700',
+  dormant: 'bg-amber-100 text-amber-700',
+  churned: 'bg-red-100 text-red-700',
+};
+
+// ─── 年代日本語ラベル ───────────────────────────────────────────────────────
+
+export const AGE_GROUP_LABELS: Record<string, string> = {
+  '10s': '10代',
+  '20s': '20代',
+  '30s': '30代',
+  '40s': '40代',
+  '50s': '50代',
+  '60plus': '60代以上',
 };
