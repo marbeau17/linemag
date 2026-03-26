@@ -100,7 +100,13 @@ export default function ReservationCalendarPage() {
       if (resRes && resRes.ok) {
         const data = await resRes.json().catch(() => null);
         if (data) {
-          setReservations(Array.isArray(data) ? data : data.reservations ?? []);
+          const list: Reservation[] = Array.isArray(data)
+            ? data
+            : Array.isArray(data.reservations)
+              ? data.reservations
+              : [];
+          // Filter out invalid entries that lack an id
+          setReservations(list.filter((r) => r && typeof r.id === 'string'));
         } else {
           setReservations([]);
         }
@@ -134,8 +140,11 @@ export default function ReservationCalendarPage() {
   const reservationsByDate = useMemo(() => {
     const map: Record<string, Reservation[]> = {};
     for (const r of reservations) {
+      // Skip reservations with missing date or invalid data
       const d = r.date ?? '';
-      if (!d) continue;
+      if (!d || typeof d !== 'string') continue;
+      // Validate date format (YYYY-MM-DD)
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
       (map[d] ??= []).push(r);
     }
     return map;
@@ -190,10 +199,12 @@ export default function ReservationCalendarPage() {
   /* ----- build business hours timeline for selected day ----- */
   const businessHoursForDay = useMemo(() => {
     if (!settings || !selectedDate) return null;
-    const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    const idx = mondayIndex(selectedDate);
-    const key = dayKeys[idx];
-    return settings.businessHours?.[key] ?? null;
+    // businessHours uses numeric string keys: "0" = Sunday .. "6" = Saturday
+    const key = String(selectedDate.getDay());
+    const hours = settings.businessHours?.[key] ?? null;
+    // Guard against entries with missing start/end
+    if (!hours || !hours.start || !hours.end) return null;
+    return hours;
   }, [settings, selectedDate]);
 
   return (
@@ -530,8 +541,9 @@ function TimelineBar({
         {reservations
           .filter(r => r.startTime && r.endTime && r.status !== 'cancelled')
           .map((r) => {
-            const rStart = Math.max(timeToMinutes(r.startTime!), startMin);
-            const rEnd = Math.min(timeToMinutes(r.endTime!), endMin);
+            const rStart = Math.max(timeToMinutes(r.startTime ?? ''), startMin);
+            const rEnd = Math.min(timeToMinutes(r.endTime ?? ''), endMin);
+            if (rEnd <= rStart) return null;
             const left = ((rStart - startMin) / totalMin) * 100;
             const width = ((rEnd - rStart) / totalMin) * 100;
             const bgColor =

@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { Reservation } from '@/types/booking';
+import type { Reservation, TimeSlot } from '@/types/booking';
 import {
   RESERVATION_STATUS_LABELS,
   RESERVATION_STATUS_COLORS,
@@ -14,15 +14,21 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 interface ReservationStats {
-  today: number;
-  thisWeek: number;
-  thisMonth: number;
+  totalToday: number;
+  totalThisWeek: number;
+  totalThisMonth: number;
   cancelRate: number;
 }
 
 interface Consultant {
   id: string;
   name: string;
+}
+
+interface CustomerOption {
+  id: string;
+  displayName: string;
+  lineUserName?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -35,6 +41,14 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: 'キャンセル' },
   { value: 'no_show', label: 'ノーショー' },
 ] as const;
+
+const SERVICE_TYPE_OPTIONS = [
+  { value: 'general', label: '一般相談' },
+  { value: 'technical', label: '技術相談' },
+  { value: 'career', label: 'キャリア相談' },
+] as const;
+
+const DEBOUNCE_MS = 300;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,6 +70,357 @@ function formatTime(time: string): string {
 
 function todayJST(): string {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+}
+
+// ---------------------------------------------------------------------------
+// New Reservation Modal
+// ---------------------------------------------------------------------------
+function NewReservationModal({
+  consultants,
+  onClose,
+  onCreated,
+}: {
+  consultants: Consultant[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  // Customer search
+  const [customerQuery, setCustomerQuery] = useState('');
+  const [customerResults, setCustomerResults] = useState<CustomerOption[]>([]);
+  const [customerLoading, setCustomerLoading] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Form fields
+  const [selectedConsultantId, setSelectedConsultantId] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedSlotId, setSelectedSlotId] = useState('');
+  const [serviceType, setServiceType] = useState('general');
+  const [notes, setNotes] = useState('');
+
+  // Slots
+  const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+
+  // Submit
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Debounced customer search
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    if (!customerQuery.trim()) {
+      setCustomerResults([]);
+      return;
+    }
+
+    debounceRef.current = setTimeout(async () => {
+      setCustomerLoading(true);
+      try {
+        const params = new URLSearchParams({ search: customerQuery.trim(), perPage: '10' });
+        const res = await fetch(`/api/crm/customers?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          const customers = data.customers ?? data ?? [];
+          setCustomerResults(
+            customers.map((c: Record<string, unknown>) => ({
+              id: c.id as string,
+              displayName: (c.displayName ?? c.lineUserName ?? c.id) as string,
+              lineUserName: c.lineUserName as string | undefined,
+            })),
+          );
+        }
+      } catch {
+        // silently fail
+      } finally {
+        setCustomerLoading(false);
+      }
+    }, DEBOUNCE_MS);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [customerQuery]);
+
+  // Fetch available slots when consultant + date change
+  useEffect(() => {
+    if (!selectedConsultantId || !selectedDate) {
+      setAvailableSlots([]);
+      setSelectedSlotId('');
+      return;
+    }
+
+    let cancelled = false;
+    setSlotsLoading(true);
+    setSelectedSlotId('');
+
+    (async () => {
+      try {
+        const params = new URLSearchParams({ consultantId: selectedConsultantId });
+        const res = await fetch(`/api/booking/slots/${selectedDate}?${params.toString()}`);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          const slots: TimeSlot[] = Array.isArray(data) ? data : data.slots ?? [];
+          setAvailableSlots(slots.filter((s) => s.isAvailable));
+        }
+      } catch {
+        // silently fail
+      } finally {
+        if (!cancelled) setSlotsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedConsultantId, selectedDate]);
+
+  // Submit handler
+  const handleSubmit = async () => {
+    if (!selectedCustomer || !selectedConsultantId || !selectedSlotId) return;
+
+    setSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const res = await fetch('/api/booking/reservations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: selectedCustomer.id,
+          consultantId: selectedConsultantId,
+          timeSlotId: selectedSlotId,
+          serviceType,
+          notes: notes.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || '予約の作成に失敗しました');
+      }
+
+      onCreated();
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : 'エラーが発生しました');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const canSubmit = selectedCustomer && selectedConsultantId && selectedSlotId && serviceType && !submitting;
+
+  const inputClass =
+    'w-full px-3 py-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400 transition-colors';
+  const labelClass = 'block text-xs font-semibold text-slate-600 mb-1';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+
+      {/* Modal */}
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+          <h2 className="text-lg font-bold text-slate-800">新規予約作成</h2>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-5">
+          {/* 1. Customer search */}
+          <div>
+            <label className={labelClass}>顧客検索</label>
+            {selectedCustomer ? (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 border border-green-200">
+                <span className="text-sm font-medium text-green-800 flex-1">
+                  {selectedCustomer.displayName}
+                </span>
+                <button
+                  onClick={() => {
+                    setSelectedCustomer(null);
+                    setCustomerQuery('');
+                    setCustomerResults([]);
+                  }}
+                  className="text-xs text-green-600 hover:text-green-800 transition-colors"
+                >
+                  変更
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="名前で検索..."
+                  value={customerQuery}
+                  onChange={(e) => setCustomerQuery(e.target.value)}
+                  className={inputClass}
+                />
+                {customerLoading && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg className="animate-spin w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  </div>
+                )}
+                {customerResults.length > 0 && (
+                  <ul className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                    {customerResults.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCustomer(c);
+                            setCustomerQuery('');
+                            setCustomerResults([]);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 transition-colors"
+                        >
+                          <span className="font-medium text-slate-800">{c.displayName}</span>
+                          {c.lineUserName && c.lineUserName !== c.displayName && (
+                            <span className="ml-2 text-xs text-slate-400">{c.lineUserName}</span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {!customerLoading && customerQuery.trim() && customerResults.length === 0 && (
+                  <p className="mt-1 text-xs text-slate-400">該当する顧客が見つかりません</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 2. Consultant selector */}
+          <div>
+            <label className={labelClass}>相談員</label>
+            <select
+              value={selectedConsultantId}
+              onChange={(e) => setSelectedConsultantId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">選択してください</option>
+              {consultants.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 3. Date picker */}
+          <div>
+            <label className={labelClass}>予約日</label>
+            <input
+              type="date"
+              value={selectedDate}
+              min={todayJST()}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+
+          {/* 4. Time slot selector */}
+          <div>
+            <label className={labelClass}>時間帯</label>
+            {!selectedConsultantId || !selectedDate ? (
+              <p className="text-xs text-slate-400">相談員と日付を選択してください</p>
+            ) : slotsLoading ? (
+              <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                空き枠を取得中...
+              </div>
+            ) : availableSlots.length === 0 ? (
+              <p className="text-xs text-slate-400">利用可能な枠がありません</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {availableSlots.map((slot) => (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    onClick={() => setSelectedSlotId(slot.id)}
+                    className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                      selectedSlotId === slot.id
+                        ? 'border-green-500 bg-green-50 text-green-700 font-medium'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 5. Service type dropdown */}
+          <div>
+            <label className={labelClass}>相談種別</label>
+            <select
+              value={serviceType}
+              onChange={(e) => setServiceType(e.target.value)}
+              className={inputClass}
+            >
+              {SERVICE_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 6. Notes textarea */}
+          <div>
+            <label className={labelClass}>備考</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="メモがあれば入力..."
+              className={`${inputClass} resize-none`}
+            />
+          </div>
+
+          {/* Submit error */}
+          {submitError && (
+            <div className="px-3 py-2 rounded-lg text-xs bg-red-50 text-red-700 border border-red-200">
+              {submitError}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+          >
+            キャンセル
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className="px-5 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {submitting ? '作成中...' : '予約を作成'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +447,9 @@ export default function ReservationsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [consultantId, setConsultantId] = useState('');
+
+  // New reservation modal state
+  const [showNewModal, setShowNewModal] = useState(false);
 
   // Fetch consultants (once)
   useEffect(() => {
@@ -156,6 +524,13 @@ export default function ReservationsPage() {
     }
   };
 
+  // Handle reservation created
+  const handleReservationCreated = () => {
+    setShowNewModal(false);
+    fetchReservations();
+    fetchStats();
+  };
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -182,19 +557,30 @@ export default function ReservationsPage() {
       </div>
 
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-slate-800">予約管理</h1>
-        <p className="text-sm text-slate-400 mt-1">予約の確認・管理を行います</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">予約管理</h1>
+          <p className="text-sm text-slate-400 mt-1">予約の確認・管理を行います</p>
+        </div>
+        <button
+          onClick={() => setShowNewModal(true)}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          新規予約作成
+        </button>
       </div>
 
       {/* Stats cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="今日の予約数" value={stats?.today ?? '-'} color="green" />
-        <StatCard label="今週" value={stats?.thisWeek ?? '-'} color="blue" />
-        <StatCard label="今月" value={stats?.thisMonth ?? '-'} color="indigo" />
+        <StatCard label="今日の予約数" value={stats?.totalToday ?? '-'} color="green" />
+        <StatCard label="今週" value={stats?.totalThisWeek ?? '-'} color="blue" />
+        <StatCard label="今月" value={stats?.totalThisMonth ?? '-'} color="indigo" />
         <StatCard
           label="キャンセル率"
-          value={stats ? `${stats.cancelRate.toFixed(1)}%` : '-'}
+          value={stats != null ? `${(stats.cancelRate * 100).toFixed(1)}%` : '-'}
           color="red"
         />
       </div>
@@ -445,6 +831,15 @@ export default function ReservationsPage() {
           </table>
         </div>
       </div>
+
+      {/* New reservation modal */}
+      {showNewModal && (
+        <NewReservationModal
+          consultants={consultants}
+          onClose={() => setShowNewModal(false)}
+          onCreated={handleReservationCreated}
+        />
+      )}
     </div>
   );
 }

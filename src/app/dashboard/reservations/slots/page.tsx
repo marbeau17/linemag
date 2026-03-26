@@ -5,19 +5,16 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 /* ─── types ─── */
-interface BusinessHour {
-  day: string;
-  label: string;
-  start: string;
-  end: string;
+interface BusinessHours {
+  [day: string]: { start: string; end: string };
 }
 
 interface BookingSettings {
-  businessHours: BusinessHour[];
+  businessHours: BusinessHours;
   slotDurations: number[];
   bufferMinutes: number;
-  bookableAheadDays: number;
-  closedDates: string[];
+  maxAdvanceDays: number;
+  holidays: string[];
 }
 
 interface Consultant {
@@ -29,20 +26,32 @@ interface Consultant {
   active: boolean;
 }
 
-const DEFAULT_HOURS: BusinessHour[] = [
-  { day: 'mon', label: '月曜日', start: '09:00', end: '18:00' },
-  { day: 'tue', label: '火曜日', start: '09:00', end: '18:00' },
-  { day: 'wed', label: '水曜日', start: '09:00', end: '18:00' },
-  { day: 'thu', label: '木曜日', start: '09:00', end: '18:00' },
-  { day: 'fri', label: '金曜日', start: '09:00', end: '18:00' },
-];
+const DAY_LABELS: Record<string, string> = {
+  mon: '月',
+  tue: '火',
+  wed: '水',
+  thu: '木',
+  fri: '金',
+  sat: '土',
+  sun: '日',
+};
+
+const DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+
+const DEFAULT_BUSINESS_HOURS: BusinessHours = {
+  mon: { start: '09:00', end: '18:00' },
+  tue: { start: '09:00', end: '18:00' },
+  wed: { start: '09:00', end: '18:00' },
+  thu: { start: '09:00', end: '18:00' },
+  fri: { start: '09:00', end: '18:00' },
+};
 
 const DEFAULT_SETTINGS: BookingSettings = {
-  businessHours: DEFAULT_HOURS,
+  businessHours: DEFAULT_BUSINESS_HOURS,
   slotDurations: [30],
   bufferMinutes: 10,
-  bookableAheadDays: 14,
-  closedDates: [],
+  maxAdvanceDays: 14,
+  holidays: [],
 };
 
 /* ─── tiny helpers ─── */
@@ -115,10 +124,13 @@ export default function SlotsSettingsPage() {
   }, [fetchSettings, fetchConsultants]);
 
   /* ─── settings handlers ─── */
-  const updateHour = (idx: number, field: 'start' | 'end', value: string) => {
+  const updateHour = (day: string, field: 'start' | 'end', value: string) => {
     setSettings((p) => ({
       ...p,
-      businessHours: p.businessHours.map((h, i) => (i === idx ? { ...h, [field]: value } : h)),
+      businessHours: {
+        ...p.businessHours,
+        [day]: { ...p.businessHours[day], [field]: value },
+      },
     }));
   };
 
@@ -132,13 +144,13 @@ export default function SlotsSettingsPage() {
   };
 
   const addClosedDate = () => {
-    if (!newClosedDate || settings.closedDates.includes(newClosedDate)) return;
-    setSettings((p) => ({ ...p, closedDates: [...p.closedDates, newClosedDate].sort() }));
+    if (!newClosedDate || settings.holidays.includes(newClosedDate)) return;
+    setSettings((p) => ({ ...p, holidays: [...p.holidays, newClosedDate].sort() }));
     setNewClosedDate('');
   };
 
   const removeClosedDate = (date: string) => {
-    setSettings((p) => ({ ...p, closedDates: p.closedDates.filter((d) => d !== date) }));
+    setSettings((p) => ({ ...p, holidays: p.holidays.filter((d) => d !== date) }));
   };
 
   const saveSettings = async () => {
@@ -291,24 +303,28 @@ export default function SlotsSettingsPage() {
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-2">営業時間</label>
             <div className="space-y-2">
-              {settings.businessHours.map((h, i) => (
-                <div key={h.day} className="flex items-center gap-3">
-                  <span className="w-16 text-sm text-slate-600">{h.label}</span>
-                  <input
-                    type="time"
-                    value={h.start}
-                    onChange={(e) => updateHour(i, 'start', e.target.value)}
-                    className={inputCls}
-                  />
-                  <span className="text-sm text-slate-400">〜</span>
-                  <input
-                    type="time"
-                    value={h.end}
-                    onChange={(e) => updateHour(i, 'end', e.target.value)}
-                    className={inputCls}
-                  />
-                </div>
-              ))}
+              {DAY_ORDER.map((day) => {
+                const hours = settings.businessHours[day];
+                if (!hours) return null;
+                return (
+                  <div key={day} className="flex items-center gap-3">
+                    <span className="w-16 text-sm text-slate-600">{DAY_LABELS[day]}</span>
+                    <input
+                      type="time"
+                      value={hours.start}
+                      onChange={(e) => updateHour(day, 'start', e.target.value)}
+                      className={inputCls}
+                    />
+                    <span className="text-sm text-slate-400">〜</span>
+                    <input
+                      type="time"
+                      value={hours.end}
+                      onChange={(e) => updateHour(day, 'end', e.target.value)}
+                      className={inputCls}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -348,8 +364,8 @@ export default function SlotsSettingsPage() {
             <input
               type="number"
               min={1}
-              value={settings.bookableAheadDays}
-              onChange={(e) => setSettings((p) => ({ ...p, bookableAheadDays: parseInt(e.target.value) || 1 }))}
+              value={settings.maxAdvanceDays}
+              onChange={(e) => setSettings((p) => ({ ...p, maxAdvanceDays: parseInt(e.target.value) || 1 }))}
               className={`${inputCls} w-24`}
             />
           </div>
@@ -371,9 +387,9 @@ export default function SlotsSettingsPage() {
                 追加
               </button>
             </div>
-            {settings.closedDates.length > 0 && (
+            {settings.holidays.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
-                {settings.closedDates.map((date) => (
+                {settings.holidays.map((date) => (
                   <span
                     key={date}
                     className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-red-50 text-red-700 rounded-full border border-red-200"

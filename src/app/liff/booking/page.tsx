@@ -18,16 +18,29 @@ interface SlotSummary {
   availableCount: number;
 }
 
+/** Shape returned by /api/booking/slots and /api/booking/slots/[date] */
+interface ApiSlot {
+  id: string;
+  consultantId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  isAvailable: boolean;
+  createdAt: string;
+}
+
 interface TimeSlot {
   id: string;
   startTime: string;     // HH:mm
   endTime: string;       // HH:mm
+  consultantId: string;
   consultantName: string;
 }
 
 interface ReservationResult {
   id: string;
-  meetUrl: string;
+  meetUrl: string | null;
 }
 
 // ---------- constants ----------
@@ -60,7 +73,7 @@ const SERVICE_TYPES: ServiceType[] = [
 
 const STEPS = ['相談種別選択', '日付選択', '時間選択', '確認・予約'] as const;
 
-// Japanese holidays for the next 30‑day window (static list — extend as needed)
+// Japanese holidays for the next 30-day window (static list — extend as needed)
 const HOLIDAYS = new Set([
   '2026-03-21', // 春分の日 (振替)
   '2026-04-29', // 昭和の日
@@ -84,6 +97,40 @@ function formatDate(d: Date): string {
 function displayDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
   return `${d.getMonth() + 1}月${d.getDate()}日(${WEEKDAY_LABELS[d.getDay()]})`;
+}
+
+/**
+ * Aggregate an array of API slots into per-date availability summaries.
+ * Only counts slots where isAvailable === true.
+ */
+function aggregateSlotSummaries(slots: ApiSlot[]): SlotSummary[] {
+  const map = new Map<string, number>();
+  for (const slot of slots) {
+    if (!slot.isAvailable) continue;
+    map.set(slot.date, (map.get(slot.date) ?? 0) + 1);
+  }
+  return Array.from(map.entries())
+    .map(([date, availableCount]) => ({ date, availableCount }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * Convert API slots to the TimeSlot shape used by the UI.
+ * Fetches consultant names from a pre-loaded map or falls back to consultantId.
+ */
+function apiSlotsToTimeSlots(
+  slots: ApiSlot[],
+  consultantNames: Map<string, string>,
+): TimeSlot[] {
+  return slots
+    .filter((s) => s.isAvailable)
+    .map((s) => ({
+      id: s.id,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      consultantId: s.consultantId,
+      consultantName: consultantNames.get(s.consultantId) ?? s.consultantId,
+    }));
 }
 
 // ---------- component ----------
@@ -110,6 +157,9 @@ export default function BookingPage() {
   const [result, setResult] = useState<ReservationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Consultant name cache
+  const [consultantNames, setConsultantNames] = useState<Map<string, string>>(new Map());
+
   // ---- date range for calendar ----
   const { startDate, endDate, days } = useMemo(() => {
     const today = new Date();
@@ -127,6 +177,23 @@ export default function BookingPage() {
     return { startDate: start, endDate: endStr, days: dayList };
   }, []);
 
+  // ---- fetch consultant names once ----
+  useEffect(() => {
+    fetch('/api/booking/consultants')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: Array<{ id: string; name: string }>) => {
+        if (!Array.isArray(data)) return;
+        const map = new Map<string, string>();
+        for (const c of data) {
+          if (c.id && c.name) map.set(c.id, c.name);
+        }
+        setConsultantNames(map);
+      })
+      .catch(() => {
+        // Non-critical — we fall back to consultantId display
+      });
+  }, []);
+
   // ---- fetch slot summaries when entering step 2 ----
   const [slotsError, setSlotsError] = useState<string | null>(null);
 
@@ -142,7 +209,11 @@ export default function BookingPage() {
         if (!r.ok) throw new Error('空き状況の取得に失敗しました');
         return r.json();
       })
-      .then((data: SlotSummary[]) => setSlotSummaries(Array.isArray(data) ? data : []))
+      .then((data: unknown) => {
+        // API returns ApiSlot[] — aggregate into per-date summaries
+        const slots: ApiSlot[] = Array.isArray(data) ? data : [];
+        setSlotSummaries(aggregateSlotSummaries(slots));
+      })
       .catch((e) => {
         setSlotSummaries([]);
         setSlotsError(e instanceof Error ? e.message : '空き状況の取得に失敗しました');
@@ -159,19 +230,26 @@ export default function BookingPage() {
     setTimeSlots([]);
     setTimesError(null);
     fetch(
-      `/api/booking/slots/${selectedDate}?durationMinutes=${selectedService.duration}`,
+      `/api/booking/slots/${selectedDate}`,
     )
       .then((r) => {
         if (!r.ok) throw new Error('時間帯の取得に失敗しました');
         return r.json();
       })
-      .then((data: TimeSlot[]) => setTimeSlots(Array.isArray(data) ? data : []))
+      .then((data: unknown) => {
+        // API returns ApiSlot[] — convert to UI TimeSlot[], filtering by duration and availability
+        const allSlots: ApiSlot[] = Array.isArray(data) ? data : [];
+        const filtered = allSlots.filter(
+          (s) => s.durationMinutes === selectedService.duration,
+        );
+        setTimeSlots(apiSlotsToTimeSlots(filtered, consultantNames));
+      })
       .catch((e) => {
         setTimeSlots([]);
         setTimesError(e instanceof Error ? e.message : '時間帯の取得に失敗しました');
       })
       .finally(() => setLoadingTimes(false));
-  }, [step, selectedDate, selectedService]);
+  }, [step, selectedDate, selectedService, consultantNames]);
 
   // ---- availability lookup ----
   const availabilityMap = useMemo(() => {
@@ -192,14 +270,17 @@ export default function BookingPage() {
         body: JSON.stringify({
           customerId: HARDCODED_CUSTOMER_ID,
           serviceType: selectedService.id,
-          date: selectedDate,
-          slotId: selectedSlot.id,
+          timeSlotId: selectedSlot.id,
+          consultantId: selectedSlot.consultantId,
           notes: notes.trim() || undefined,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '予約に失敗しました');
-      setResult(data as ReservationResult);
+      if (!res.ok) throw new Error(data?.error || '予約に失敗しました');
+      setResult({
+        id: data?.id ?? '',
+        meetUrl: data?.meetUrl ?? null,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : '予約に失敗しました');
     } finally {
